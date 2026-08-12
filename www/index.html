@@ -1,0 +1,1561 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0E2A52">
+
+<!-- Segunda línea de defensa. esc() cubre hoy todas las interpolaciones, pero
+     un solo ${dato} sin escapar añadido dentro de seis meses convertiría el
+     nombre de un baño en robo de sesión. connect-src acota a dónde podría
+     exfiltrarse un token, que es lo que importa. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src  'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
+  style-src   'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com;
+  font-src    'self' data: https://fonts.gstatic.com;
+  img-src     'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://unpkg.com https://cdnjs.cloudflare.com;
+  connect-src 'self' https://*.supabase.co https://overpass-api.de https://overpass.kumi.systems;
+  form-action 'none';
+  base-uri    'none';
+  object-src  'none'">
+
+<title>CERCA · Baños</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Public+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+/* ══════════════════════════════════════════════════════════════
+   CERCA · sistema de diseño
+   Palabra clave: cartel esmaltado + pestillo de puerta de baño
+   ────────────────────────────────────────────────────────────── */
+:root{
+  --cobalto:      #0E2A52;   /* fondo: azul esmalte */
+  --cobalto-alto: #143A6E;   /* superficie elevada  */
+  --cobalto-bajo: #091C38;   /* pozo / hueco        */
+  --porcelana:    #F2EFE7;   /* panel claro         */
+  --porcelana-2:  #D9D4C7;   /* trama, bordes       */
+  --verde:        #2FA86B;   /* LIBRE               */
+  --rojo:         #D9483B;   /* OCUPADO / cerrado   */
+  --ambar:        #E8A33D;   /* aviso / sin confirmar */
+  --tinta:        #0A1526;
+
+  --r: 4px;                  /* radio: casi recto, como chapa */
+  --sombra: 0 -2px 0 rgba(0,0,0,.25), 0 12px 32px rgba(0,0,0,.45);
+
+  --sans: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --disp: 'Archivo', 'Arial Narrow', Impact, sans-serif;
+  --mono: 'DM Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --sheet-half: 46vh;
+  --sheet-full: 88vh;
+  --sheet-peek: 116px;
+}
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{height:100%; margin:0; overscroll-behavior:none}
+body{
+  font-family:var(--sans);
+  background:var(--cobalto);
+  color:var(--porcelana);
+  font-size:15px; line-height:1.4;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit; color:inherit; border:0; background:none; cursor:pointer}
+:focus-visible{outline:3px solid var(--ambar); outline-offset:2px}
+
+/* ── CABECERA ───────────────────────────────────────────────── */
+.top{
+  position:fixed; inset:0 0 auto 0; z-index:900;
+  display:flex; align-items:center; gap:12px;
+  padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;
+  background:linear-gradient(180deg, var(--cobalto) 62%, rgba(14,42,82,0));
+}
+.brand{
+  font-family:var(--disp); font-weight:800; font-size:19px;
+  letter-spacing:.14em; text-transform:uppercase; line-height:1;
+}
+.brand small{
+  display:block; font-family:var(--mono); font-size:9px; font-weight:400;
+  letter-spacing:.22em; opacity:.55; margin-top:3px;
+}
+.top .spacer{flex:1}
+.iconbtn{
+  width:40px; height:40px; display:grid; place-items:center;
+  border:1px solid rgba(242,239,231,.22); border-radius:var(--r);
+  background:rgba(9,28,56,.6); font-size:17px;
+}
+
+/* ── PESTILLO (elemento firma) ──────────────────────────────── */
+.latch{
+  position:relative; width:104px; height:28px; border-radius:var(--r);
+  border:1px solid rgba(0,0,0,.35); overflow:hidden;
+  background:var(--verde); transition:background .3s ease;
+  flex:none;
+}
+.latch[data-state="busy"]{background:var(--ambar)}
+.latch[data-state="off"] {background:var(--rojo)}
+.latch .bolt{
+  position:absolute; top:2px; left:2px; bottom:2px; width:46px;
+  background:var(--cobalto-bajo); border-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14);
+  transform:translateX(52px); transition:transform .42s cubic-bezier(.6,.05,.2,1);
+}
+.latch[data-state="busy"] .bolt{transform:translateX(26px)}
+.latch[data-state="off"]  .bolt{transform:translateX(0)}
+.latch .txt{
+  position:absolute; inset:0; display:grid; place-items:center;
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.16em;
+  text-transform:uppercase; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.5);
+  pointer-events:none;
+}
+
+/* ── MAPA ───────────────────────────────────────────────────── */
+#map{position:fixed; inset:0; z-index:1; background:var(--cobalto-bajo)}
+.leaflet-tile{filter:saturate(.62) contrast(.94) brightness(.98)}
+.leaflet-control-attribution{
+  font-family:var(--mono); font-size:9px !important;
+  background:rgba(242,239,231,.86) !important; color:#333 !important;
+}
+.leaflet-control-attribution a{color:#0E2A52 !important}
+.leaflet-bottom.leaflet-right{bottom:calc(var(--sheet-peek) - 4px)}
+
+.pin{
+  width:30px; height:30px; border-radius:var(--r) var(--r) var(--r) 0;
+  transform:rotate(-45deg); border:2px solid var(--cobalto-bajo);
+  display:grid; place-items:center; box-shadow:0 3px 8px rgba(0,0,0,.4);
+}
+.pin b{
+  transform:rotate(45deg); font-family:var(--mono); font-size:11px;
+  color:var(--cobalto-bajo); font-weight:500;
+}
+.pin.open{background:var(--verde)} .pin.cust{background:var(--ambar)}
+.pin.shut{background:var(--rojo)}  .pin.mine{background:var(--porcelana)}
+.pin.sel{outline:3px solid var(--porcelana); outline-offset:2px}
+
+.me{
+  width:18px; height:18px; border-radius:50%;
+  background:#3D8BFF; border:3px solid var(--porcelana);
+  box-shadow:0 0 0 6px rgba(61,139,255,.25);
+}
+
+/* retícula de colocación */
+.crosshair{
+  position:fixed; left:50%; top:calc(50% - 90px); z-index:850;
+  transform:translate(-50%,-50%); pointer-events:none; display:none;
+}
+body.placing .crosshair{display:block}
+.crosshair i{position:absolute; background:var(--porcelana); box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.crosshair i:nth-child(1){left:-22px; top:-1px; width:44px; height:2px}
+.crosshair i:nth-child(2){top:-22px; left:-1px; width:2px; height:44px}
+.crosshair span{
+  position:absolute; top:26px; left:50%; transform:translateX(-50%);
+  font-family:var(--mono); font-size:10px; letter-spacing:.14em; white-space:nowrap;
+  background:var(--cobalto-bajo); padding:4px 8px; border-radius:var(--r);
+}
+
+/* ── HOJA INFERIOR ──────────────────────────────────────────── */
+.sheet{
+  position:fixed; left:0; right:0; bottom:0; z-index:800;
+  height:var(--sheet-half);
+  background:var(--porcelana); color:var(--tinta);
+  border-radius:10px 10px 0 0; box-shadow:var(--sombra);
+  display:flex; flex-direction:column;
+  transition:height .32s cubic-bezier(.4,0,.2,1), transform .32s cubic-bezier(.4,0,.2,1);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.sheet.peek{height:var(--sheet-peek)}
+.sheet.full{height:var(--sheet-full)}
+.sheet.away{transform:translateY(102%)}
+
+.grip{padding:9px 0 5px; display:grid; place-items:center; touch-action:none; flex:none}
+.grip i{width:42px; height:4px; border-radius:2px; background:#B9B3A4}
+
+.chips{
+  display:flex; gap:7px; padding:2px 14px 11px; overflow-x:auto; flex:none;
+  scrollbar-width:none;
+}
+.chips::-webkit-scrollbar{display:none}
+.chip{
+  flex:none; padding:8px 13px; border-radius:var(--r); white-space:nowrap;
+  border:1.5px solid #C6C0B1; background:#fff; color:#4A4638;
+  font-size:12.5px; font-weight:500; letter-spacing:.01em;
+  min-height:38px;
+}
+.chip[aria-pressed="true"]{background:var(--cobalto); border-color:var(--cobalto); color:var(--porcelana)}
+
+.scroller{flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0 14px 92px}
+
+/* ── FICHAS DE LA LISTA ─────────────────────────────────────── */
+.card{
+  display:grid; grid-template-columns:34px 1fr auto; gap:11px; align-items:start;
+  width:100%; text-align:left; padding:13px 0; border-top:1px solid var(--porcelana-2);
+}
+.card:first-child{border-top:0}
+.rank{
+  font-family:var(--mono); font-size:12px; color:#8C8574; padding-top:3px; letter-spacing:.04em;
+}
+.card h3{
+  margin:0 0 5px; font-family:var(--disp); font-weight:600; font-size:16px;
+  line-height:1.15; color:var(--tinta);
+}
+.meta{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
+.plate{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.11em; text-transform:uppercase;
+  padding:3px 6px; border-radius:2px; border:1px solid;
+}
+.plate.open{color:#1C6B44; border-color:#7FC9A3; background:#E4F4EC}
+.plate.cust{color:#8A5D14; border-color:#E2BE7E; background:#FBF1DF}
+.plate.shut{color:#8F2A20; border-color:#E5A29A; background:#FBE7E4}
+.plate.info{color:#3D4757; border-color:#C0C7D2; background:#EDF0F4}
+
+.conf{display:flex; gap:2px; align-items:center; margin-top:7px}
+.conf i{width:13px; height:5px; border-radius:1px; background:#D5CFC0}
+.conf i.on{background:var(--verde)}
+.conf i.warn{background:var(--ambar)}
+.conf span{font-family:var(--mono); font-size:10px; color:#8C8574; margin-left:6px}
+
+.dist{text-align:right; flex:none}
+.dist b{display:block; font-family:var(--mono); font-size:18px; color:var(--tinta); line-height:1}
+.dist small{font-family:var(--mono); font-size:9px; color:#8C8574; letter-spacing:.1em}
+
+/* ── BOTONES ────────────────────────────────────────────────── */
+.go{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  min-height:52px; padding:0 22px; border-radius:var(--r);
+  background:var(--verde); color:#fff;
+  font-family:var(--disp); font-weight:800; font-size:15px;
+  letter-spacing:.1em; text-transform:uppercase;
+  box-shadow:0 3px 0 #1F7A4C;
+}
+.go:active{transform:translateY(2px); box-shadow:0 1px 0 #1F7A4C}
+.go.wide{width:100%}
+.go.alt{background:var(--cobalto); box-shadow:0 3px 0 #061A34}
+.go.alt:active{box-shadow:0 1px 0 #061A34}
+.go.ghost{background:transparent; color:var(--cobalto); box-shadow:inset 0 0 0 2px var(--cobalto)}
+
+.fab{
+  position:fixed; right:14px; z-index:820;
+  bottom:calc(var(--sheet-peek) + env(safe-area-inset-bottom) + 14px);
+  height:50px; padding:0 18px; border-radius:var(--r);
+  background:var(--porcelana); color:var(--cobalto);
+  font-family:var(--disp); font-weight:800; font-size:13px;
+  letter-spacing:.1em; text-transform:uppercase;
+  box-shadow:0 4px 14px rgba(0,0,0,.4);
+  display:flex; align-items:center; gap:7px;
+  transition:bottom .32s cubic-bezier(.4,0,.2,1), opacity .2s;
+}
+body.sheet-open .fab{opacity:0; pointer-events:none}
+
+/* ── DETALLE / FORMULARIOS ──────────────────────────────────── */
+.pane{display:none; padding:0 14px 110px}
+.pane.on{display:block}
+.pane h2{
+  font-family:var(--disp); font-weight:800; font-size:22px; line-height:1.1;
+  margin:2px 0 8px; color:var(--tinta);
+}
+.pane .sub{font-size:13px; color:#6B6553; margin:0 0 16px}
+.hr{height:1px; background:var(--porcelana-2); margin:18px 0}
+.lbl{
+  display:block; font-family:var(--mono); font-size:10px; letter-spacing:.14em;
+  text-transform:uppercase; color:#8C8574; margin:0 0 8px;
+}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.tog{
+  padding:11px 10px; border-radius:var(--r); border:1.5px solid #C6C0B1;
+  background:#fff; color:#4A4638; font-size:13px; text-align:left; min-height:44px;
+}
+.tog[aria-pressed="true"]{background:var(--cobalto); border-color:var(--cobalto); color:var(--porcelana)}
+input[type=text], textarea, select{
+  width:100%; padding:12px; border-radius:var(--r); border:1.5px solid #C6C0B1;
+  background:#fff; color:var(--tinta); font:inherit; font-size:15px;
+}
+textarea{min-height:78px; resize:vertical}
+.stars{display:flex; gap:6px}
+.star{
+  flex:1; min-height:52px; border-radius:var(--r); border:1.5px solid #C6C0B1;
+  background:#fff; font-family:var(--mono); font-size:16px; color:#4A4638;
+}
+.star[aria-pressed="true"]{background:var(--cobalto); border-color:var(--cobalto); color:var(--porcelana)}
+.rowbtns{
+  position:sticky; bottom:0; display:flex; gap:8px; padding:12px 0 6px;
+  background:linear-gradient(180deg, rgba(242,239,231,0), var(--porcelana) 26%);
+}
+.note{font-size:12.5px; color:#6B6553; line-height:1.5}
+.note b{color:var(--tinta)}
+.rev{border-top:1px solid var(--porcelana-2); padding:12px 0}
+.rev .hd{display:flex; justify-content:space-between; align-items:center; margin-bottom:5px}
+.rev .hd b{font-family:var(--mono); font-size:12px}
+.rev .hd time{font-family:var(--mono); font-size:10px; color:#8C8574}
+.rev p{margin:5px 0 0; font-size:14px}
+
+.empty{padding:30px 6px; text-align:center; color:#6B6553}
+.empty b{display:block; font-family:var(--disp); font-size:17px; color:var(--tinta); margin-bottom:6px}
+
+.toast{
+  position:fixed; left:50%; bottom:calc(var(--sheet-half) + 18px); z-index:1000;
+  transform:translate(-50%,14px); opacity:0; pointer-events:none;
+  background:var(--tinta); color:var(--porcelana);
+  padding:11px 16px; border-radius:var(--r); font-size:13.5px; max-width:88vw;
+  box-shadow:0 8px 24px rgba(0,0,0,.4); transition:.25s;
+}
+.toast.on{opacity:1; transform:translate(-50%,0)}
+
+@media (prefers-reduced-motion: reduce){
+  *{transition-duration:.01ms !important; animation-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<div id="map" aria-label="Mapa de baños"></div>
+
+<div class="crosshair" aria-hidden="true">
+  <i></i><i></i>
+  <span>ARRASTRA EL MAPA PARA SITUAR EL BAÑO</span>
+</div>
+
+<header class="top">
+  <div class="brand">Cerca<small>baños · es</small></div>
+  <div class="spacer"></div>
+  <div class="latch" id="latch" data-state="busy" role="status" aria-live="polite">
+    <span class="bolt"></span><span class="txt" id="latchTxt">Buscando</span>
+  </div>
+  <button class="iconbtn" id="btnLocate" aria-label="Centrar en mi posición">◎</button>
+</header>
+
+<button class="fab" id="btnAdd">＋ Añadir baño</button>
+
+<section class="sheet" id="sheet" aria-label="Resultados">
+  <div class="grip" id="grip" role="button" tabindex="0" aria-label="Desplegar u ocultar la lista"><i></i></div>
+
+  <!-- LISTA -->
+  <div id="paneList">
+    <div class="chips" id="chips" role="group" aria-label="Filtros">
+      <button class="chip" data-f="free"     aria-pressed="false">Gratis</button>
+      <button class="chip" data-f="acc"      aria-pressed="false">Accesible</button>
+      <button class="chip" data-f="baby"     aria-pressed="false">Cambiador</button>
+      <button class="chip" data-f="open"     aria-pressed="false">Sin consumir</button>
+      <button class="chip" data-f="h24"      aria-pressed="false">24 h</button>
+      <button class="chip" data-f="verified" aria-pressed="false">Confirmado</button>
+    </div>
+    <div class="scroller" id="list"></div>
+  </div>
+
+  <!-- DETALLE -->
+  <div class="scroller pane" id="paneDetail"></div>
+
+  <!-- VALORAR -->
+  <div class="scroller pane" id="paneReview"></div>
+
+  <!-- AÑADIR -->
+  <div class="scroller pane" id="paneForm"></div>
+
+  <!-- AJUSTES -->
+  <div class="scroller pane" id="paneInfo"></div>
+</section>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+
+/* ═══════════════════════════════════════════════════════════════
+   1. ALMACÉN  (localStorage con caída a memoria)
+   ═══════════════════════════════════════════════════════════════ */
+const store = (() => {
+  let mem = {}, native = true;
+  try { localStorage.setItem("__p", "1"); localStorage.removeItem("__p"); }
+  catch (e) { native = false; }
+  return {
+    get(k, d) {
+      try { const v = native ? localStorage.getItem(k) : mem[k];
+            return v == null ? d : JSON.parse(v); } catch (e) { return d; }
+    },
+    set(k, v) {
+      try { const s = JSON.stringify(v); native ? localStorage.setItem(k, s) : (mem[k] = s); }
+      catch (e) { mem[k] = JSON.stringify(v); }
+    },
+    native
+  };
+})();
+
+const DB = {
+  mine:    store.get("cerca.mine",    []),   // baños añadidos por el usuario
+  reviews: store.get("cerca.reviews", {}),   // { toiletRef: [reseñas propias] }
+  cache:   store.get("cerca.cache",   null), // último resultado de Overpass
+  cloud:   store.get("cerca.cloud",   null), // último resultado del servidor
+  outbox:  store.get("cerca.outbox",  []),   // envíos pendientes (modo offline)
+  supp:    store.get("cerca.supp",    []),   // refs retiradas por la comunidad
+  cfg:     store.get("cerca.cfg",     { url: "", key: "" }),
+  save(k) { store.set("cerca." + k, DB[k]); }
+};
+
+// Identificador de dispositivo: no identifica a la persona, solo frena el spam.
+const DEVICE = (() => {
+  let d = store.get("cerca.device", null);
+  if (!d) { d = "dev_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+            store.set("cerca.device", d); }
+  return d;
+})();
+
+/* ── Diagnóstico local ───────────────────────────────────────────
+   Las excepciones ya no se tragan en silencio: quedan aquí y salen
+   en el JSON de exportación. Sin telemetría remota: no hace falta.  */
+const LOG = [];
+function fallo(donde, e) {
+  LOG.push({ t: Date.now(), donde, msg: String((e && e.message) || e).slice(0, 200) });
+  if (LOG.length > 50) LOG.shift();
+  // TypeError ≈ red caída; lo demás es un fallo de código y merece consola.
+  if (!(e instanceof TypeError) && e && e.name !== "AbortError") console.error(donde, e);
+}
+
+/* ── fetch con plazo ─────────────────────────────────────────────
+   Overpass, bajo carga, no rechaza: se queda colgado. Sin plazo, el
+   pestillo S.fetching nunca se libera y la app se congela en
+   "Buscando" hasta que se mata el proceso.                         */
+async function fetchT(url, opts, ms) {
+  const ac = new AbortController();
+  const id = setTimeout(() => ac.abort(), ms || 10000);
+  try { return await fetch(url, Object.assign({}, opts || {}, { signal: ac.signal })); }
+  finally { clearTimeout(id); }
+}
+
+/* ── Sesión anónima (Supabase Auth) ──────────────────────────────
+   No pide correo, ni nombre, ni nada. El servidor entrega una identidad
+   firmada que el móvil no puede falsificar. Es lo que permite limitar
+   el spam de verdad y que cada cual pueda retirar lo suyo.            */
+const Auth = {
+  ses: store.get("cerca.ses", null),
+
+  get uid()   { return this.ses ? this.ses.uid : null; },
+  get token() { return this.ses ? this.ses.access_token : null; },
+  vivo()      { return !!(this.ses && this.ses.exp && Date.now() < this.ses.exp - 60000); },
+
+  guarda(j) {
+    this.ses = {
+      access_token: j.access_token,
+      refresh_token: j.refresh_token,
+      exp: Date.now() + ((j.expires_in || 3600) * 1000),
+      uid: j.user ? j.user.id : null
+    };
+    store.set("cerca.ses", this.ses);
+  },
+  borra() { this.ses = null; store.set("cerca.ses", null); },
+
+  async post(path, body) {
+    const r = await fetchT(DB.cfg.url.replace(/\/+$/, "") + path, {
+      method: "POST",
+      headers: { "apikey": DB.cfg.key, "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    }, 8000);
+    const t = await r.text();
+    if (!r.ok) throw new Error(t.slice(0, 200) || String(r.status));
+    return t ? JSON.parse(t) : {};
+  },
+
+  /** Devuelve un token válido, renovando o abriendo sesión si hace falta.
+   *  CERROJO DE VUELO: los refresh tokens de GoTrue rotan. Si dos llamadas
+   *  concurrentes refrescan a la vez, la primera invalida el token de la
+   *  segunda, la sesión se pierde y se acuña un usuario anónimo huérfano.
+   *  Por eso todas esperan a la misma promesa.                            */
+  _vuelo: null,
+
+  async ensure() {
+    if (!DB.cfg.url || !DB.cfg.key) return null;
+    if (this.vivo()) return this.token;
+    if (this._vuelo) return this._vuelo;
+
+    this._vuelo = (async () => {
+      try {
+        if (this.ses && this.ses.refresh_token) {
+          try {
+            this.guarda(await this.post("/auth/v1/token?grant_type=refresh_token",
+                                        { refresh_token: this.ses.refresh_token }));
+            return this.token;
+          } catch (e) { fallo("auth.refresh", e); this.borra(); }
+        }
+        try {
+          this.guarda(await this.post("/auth/v1/signup", {}));
+          return this.token;
+        } catch (e) {
+          fallo("auth.signup", e);
+          this.borra();
+          throw new Error("Sin sesión. Activa el inicio de sesión anónimo en " +
+                          "Supabase → Authentication → Sign In / Providers → Anonymous.");
+        }
+      } finally { this._vuelo = null; }
+    })();
+
+    return this._vuelo;
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   2. ESTADO
+   ═══════════════════════════════════════════════════════════════ */
+const S = {
+  map: null, me: null, meMarker: null, layer: null,
+  osm: [], cloud: [], cloudRev: {}, list: [], sel: null,
+  supp: new Set(store.get("cerca.supp", [])),
+  filters: {}, fetching: false, lastFetch: 0, placing: false,
+  form: {}, review: {}
+};
+
+const RADIO = 1600;          // metros de búsqueda
+const PASO  = 78;            // metros por minuto caminando
+
+/* ═══════════════════════════════════════════════════════════════
+   3. UTILIDADES
+   ═══════════════════════════════════════════════════════════════ */
+const $  = s => document.querySelector(s);
+const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h != null) n.innerHTML = h; return n; };
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m]));
+
+function dist(a, b, c, d) {                      // haversine, metros
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (c - a) * r, dLon = (d - b) * r;
+  const x = Math.sin(dLat/2)**2 + Math.cos(a*r) * Math.cos(c*r) * Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+const minutos = m => Math.max(1, Math.round(m / PASO));
+
+function hace(ts) {
+  if (!ts) return null;
+  const d = (Date.now() - ts) / 86400000;
+  if (d < 1)   return "hoy";
+  if (d < 2)   return "ayer";
+  if (d < 30)  return "hace " + Math.round(d) + " días";
+  if (d < 365) return "hace " + Math.round(d / 30) + " meses";
+  return "hace " + Math.round(d / 365) + " años";
+}
+
+let toastT;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2600);
+}
+
+function latch(state, txt) {
+  $("#latch").dataset.state = state;
+  $("#latchTxt").textContent = txt;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4. MODELO DE BAÑO
+   Un baño = tags OSM (o alta local) + reseñas locales que
+   sobrescriben atributos. La reseña más reciente manda.
+   ═══════════════════════════════════════════════════════════════ */
+function fromOSM(e) {
+  const t = e.tags || {};
+  const lat = e.lat != null ? e.lat : (e.center && e.center.lat);
+  const lon = e.lon != null ? e.lon : (e.center && e.center.lon);
+  if (lat == null || lon == null) return null;
+  const fee = t.fee, acc = t.access;
+  return {
+    id: "osm:" + e.type + "/" + e.id,
+    name: t.name || t.operator || (t.building ? "Aseo" : "Aseo público"),
+    lat, lon,
+    src: "osm",
+    free:  fee === "no" ? true : (fee === "yes" ? false : null),
+    price: t.charge || null,
+    acc:   t.wheelchair === "yes" ? true : (t.wheelchair === "no" ? false : null),
+    baby:  t["changing_table"] === "yes" ? true : (t["changing_table"] === "no" ? false : null),
+    entry: (acc === "customers" || acc === "permissive") ? "cust"
+         : (acc === "private" || acc === "no") ? "shut"
+         : (acc === "yes" || acc === "public") ? "open" : null,
+    h24:   /24\/7/.test(t.opening_hours || "") || null,
+    hours: t.opening_hours || null,
+    note:  t.description || t["toilets:position"] || null,
+    ts:    null
+  };
+}
+
+/** Fila devuelta por toilets_nearby() en Supabase. */
+function fromCloud(r) {
+  return {
+    id: r.ref, name: r.name, lat: r.lat_out, lon: r.lon_out,
+    src: r.ref.indexOf("osm:") === 0 ? "osm" : "db",
+    free: r.free, acc: r.acc, baby: r.baby, h24: r.h24,
+    entry: r.entry, note: r.note, hours: null, price: null,
+    srvRating: r.rating, srvCount: r.n_reviews, mine: !!r.mine,
+    ts: r.last_review ? Date.parse(r.last_review) : null
+  };
+}
+
+/** Aplica sobre el baño base las reseñas propias y las del servidor. */
+/** Consenso ponderado sobre las reseñas recientes.
+ *  Antes mandaba la última reseña sin más: una sola persona anónima podía
+ *  cambiar "gratuito: sí" por "no" para todo el mundo, y de paso sacar un
+ *  baño accesible de la búsqueda de quien va en silla de ruedas.
+ *  Ahora: visita verificada pesa doble, lo viejo pesa la mitad, y sin
+ *  mayoría clara (60%) no se afirma nada.                                */
+function consenso(rs, k) {
+  const w = new Map();
+  rs.slice(0, 8).forEach(r => {
+    const v = r.attrs && r.attrs[k];
+    if (v == null || v === "") return;
+    const peso = (r.verified ? 2 : 1) * (r.ts > Date.now() - 15552000000 ? 1 : 0.5);
+    w.set(v, (w.get(v) || 0) + peso);
+  });
+  if (!w.size) return undefined;
+  const orden = Array.from(w.entries()).sort((a, b) => b[1] - a[1]);
+  const total = orden.reduce((s, e) => s + e[1], 0);
+  return orden[0][1] / total >= 0.6 ? orden[0][0] : undefined;
+}
+
+function merged(base) {
+  const own = (DB.reviews[base.id] || []);
+  const srv = (S.cloudRev[base.id] || []);
+  // La copia local y la del servidor llevan relojes distintos: comparar
+  // marcas exactas nunca casaba y el usuario veía su reseña duplicada.
+  const rs = srv.concat(own.filter(o =>
+                 !srv.some(s => Math.abs(s.ts - o.ts) < 300000 && s.rating === o.rating)))
+                .slice().sort((a, b) => b.ts - a.ts);
+  const o = Object.assign({}, base);
+  o.reviews = rs;
+  if (rs.length) {
+    o.ts = rs[0].ts;
+    o.rating = Math.round(rs.reduce((s, r) => s + r.rating, 0) / rs.length * 10) / 10;
+    o.clean  = Math.round(rs.reduce((s, r) => s + (r.clean || r.rating), 0) / rs.length * 10) / 10;
+    ["free", "acc", "baby", "h24", "entry"].forEach(k => {
+      const v = consenso(rs, k);
+      if (v !== undefined) o[k] = v;
+    });
+  }
+  o.conf = confianza(o);
+  return o;
+}
+
+/** 0–3 barras. Datos sin confirmar envejecen; es el antídoto contra los datos zombi. */
+function confianza(t) {
+  if (!t.ts) return { n: t.src === "mine" ? 1 : 0, txt: "sin confirmar", warn: true };
+  const d = (Date.now() - t.ts) / 86400000;
+  const n = (t.reviews && t.reviews.length > 1) ? 1 : 0;
+  if (d < 30)  return { n: Math.min(3, 2 + n), txt: hace(t.ts), warn: false };
+  if (d < 180) return { n: 2, txt: hace(t.ts), warn: false };
+  return { n: 1, txt: hace(t.ts), warn: true };
+}
+
+const entryPlate = e => e === "open" ? ["open", "Libre"]
+                      : e === "cust" ? ["cust", "Solo clientes"]
+                      : e === "shut" ? ["shut", "Cerrado"]
+                      : ["info", "Acceso ?"];
+
+/* ═══════════════════════════════════════════════════════════════
+   4b. NUBE · Supabase por REST (sin librerías, funciona offline)
+   ═══════════════════════════════════════════════════════════════ */
+const Cloud = {
+  get on() { return !!(DB.cfg.url && DB.cfg.key); },
+
+  head(tok, extra) {
+    return Object.assign({
+      "apikey": DB.cfg.key,
+      "Authorization": "Bearer " + (tok || DB.cfg.key),
+      "Content-Type": "application/json"
+    }, extra || {});
+  },
+
+  /**
+   * escribe = true  → exige sesión firmada; si no hay, falla y se encola.
+   * escribe = false → intenta con sesión, y si no la hay lee igual (anon).
+   */
+  async call(path, body, escribe) {
+    let tok = null;
+    try { tok = await Auth.ensure(); }
+    catch (e) { if (escribe) throw e; }
+    if (escribe && !tok) throw new Error("Sin sesión para publicar.");
+
+    const r = await fetchT(DB.cfg.url.replace(/\/+$/, "") + path, {
+      method: "POST", headers: this.head(tok, { "Prefer": "return=representation" }),
+      body: JSON.stringify(body)
+    }, 8000);
+    const txt = await r.text();
+    if (!r.ok) throw new Error(txt.slice(0, 200) || r.status);
+    return txt ? JSON.parse(txt) : null;
+  },
+
+  /** Baños de la comunidad alrededor de un punto, más la lista de supresiones. */
+  async nearby(lat, lng) {
+    const rows = await this.call("/rest/v1/rpc/toilets_nearby",
+                                 { lat, lng, radius_m: RADIO });
+    S.cloud = (rows || []).map(fromCloud);
+    DB.cloud = { lat, lon: lng, ts: Date.now(), items: S.cloud }; DB.save("cloud");
+
+    // Baños retirados por la comunidad. Es lo único que alcanza a los que
+    // sólo existen en OpenStreetMap y nunca pasan por nuestra tabla.
+    try {
+      const sup = await this.call("/rest/v1/rpc/suppressed", {});
+      DB.supp = (sup || []).map(s => s.ref); DB.save("supp");
+      S.supp = new Set(DB.supp);
+    } catch (e) { fallo("cloud.suppressed", e); }
+
+    return S.cloud;
+  },
+
+  /** Reseñas de una tanda de baños (incluidos los que solo existen en OSM). */
+  async reviews(refs) {
+    if (!refs.length) return;
+    const rows = await this.call("/rest/v1/rpc/reviews_for", { refs });
+    const map = {};
+    (rows || []).forEach(r => {
+      (map[r.toilet_ref] = map[r.toilet_ref] || []).push({
+        rid: r.id, rating: r.rating, clean: r.clean, attrs: r.attrs || {},
+        comment: r.comment, verified: r.verified, mine: !!r.mine,
+        ts: Date.parse(r.created_at), remote: true
+      });
+    });
+    // Sólo se refresca lo que se ha pedido. Sustituir el mapa entero dejaba
+    // sin reseñas al resto de baños al releer uno solo tras publicar.
+    refs.forEach(ref => { S.cloudRev[ref] = map[ref] || []; });
+  },
+
+  /** Reportar un baño o una reseña. El servidor cuenta y oculta solo. */
+  async report(kind, ref, reason, detail) {
+    return this.call("/rest/v1/rpc/report_item",
+                     { p_kind: kind, p_ref: ref, p_reason: reason, p_detail: detail || null },
+                     true);
+  },
+
+  /** Retirar algo propio. No borra: lo oculta, y es reversible desde el panel. */
+  async retract(kind, ref) {
+    return this.call("/rest/v1/rpc/retract", { p_kind: kind, p_ref: ref }, true);
+  },
+
+  /** Cola de salida: si no hay red, se guarda y se reintenta luego.
+   *  Con techo duro: una cola sin límite acaba bloqueando el arranque. */
+  queue(op) {
+    op.try = 0; op.next = 0;
+    DB.outbox.push(op);
+    if (DB.outbox.length > 200) DB.outbox.shift();
+    DB.save("outbox");
+  },
+
+  async send(op) {
+    if (op.k === "toilet") {
+      return this.call("/rest/v1/rpc/add_toilet", {
+        p_name: op.d.name, p_lat: op.d.lat, p_lng: op.d.lon,
+        p_free: op.d.free, p_acc: op.d.acc, p_baby: op.d.baby, p_h24: op.d.h24,
+        p_entry: op.d.entry, p_note: op.d.note, p_device: DEVICE,
+        p_osm_ref: op.d.osm_ref || null
+      }, true);
+    }
+    // La distancia ya NO la declara el móvil: se mandan las coordenadas y el
+    // servidor mide contra la geometría del baño. No las guarda en ningún sitio.
+    return this.call("/rest/v1/rpc/add_review", {
+      p_ref: op.d.ref, p_rating: op.d.rating, p_clean: op.d.clean,
+      p_attrs: op.d.attrs, p_comment: op.d.comment || null,
+      p_lat: op.d.mlat != null ? op.d.mlat : null,
+      p_lng: op.d.mlon != null ? op.d.mlon : null,
+      p_toilet_lat: op.d.tlat != null ? op.d.tlat : null,
+      p_toilet_lng: op.d.tlon != null ? op.d.tlon : null
+    }, true);
+  },
+
+  /** ¿Es un error definitivo? Reintentarlo no lo arreglará nunca. */
+  fatal(m) {
+    return /duplicad|límite|limite|no válido|menos de 15|fuera de rango|one_per_day/i.test(m)
+        || /"code":"23505"/.test(m);
+  },
+
+  /** Vacía la cola por tandas, con espera creciente. Devuelve cuántos salieron. */
+  async flush(max) {
+    if (!this.on || !DB.outbox.length) return 0;
+    max = max || 5;
+    let sent = 0, n = 0;
+    const left = [];
+    for (const op of DB.outbox) {
+      if (n >= max || (op.next || 0) > Date.now()) { left.push(op); continue; }
+      n++;
+      try { await this.send(op); sent++; }
+      catch (e) {
+        const m = String(e.message || "");
+        fallo("cloud.flush", e);
+        if (this.fatal(m)) {
+          toast(m.replace(/.*"message":"([^"]+)".*/, "$1").slice(0, 90));
+        } else if ((op.try = (op.try || 0) + 1) < 6) {
+          op.next = Date.now() + Math.min(3600000, 30000 * Math.pow(2, op.try));
+          left.push(op);
+        } else {
+          toast("No se pudo publicar " +
+                (op.k === "toilet" ? "un baño" : "una reseña") + ". Descartado.");
+        }
+      }
+    }
+    DB.outbox = left; DB.save("outbox");
+    return sent;
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   5. MAPA
+   ═══════════════════════════════════════════════════════════════ */
+function initMap() {
+  S.map = L.map("map", { zoomControl: false, attributionControl: true })
+           .setView([43.263, -2.935], 15);   // Bilbao por defecto
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(S.map);
+  S.layer = L.layerGroup().addTo(S.map);
+  S.map.on("dragend", () => { if (!S.placing) maybeRefetch(); });
+}
+
+function paintMarkers() {
+  S.layer.clearLayers();
+  S.list.slice(0, 40).forEach((t, i) => {
+    const cls = t.src === "mine" ? "mine" : (t.entry || "info").replace("info", "cust");
+    const m = L.marker([t.lat, t.lon], {
+      icon: L.divIcon({
+        className: "", iconSize: [30, 30], iconAnchor: [15, 30],
+        html: `<div class="pin ${cls} ${S.sel === t.id ? "sel" : ""}"><b>${i + 1}</b></div>`
+      })
+    });
+    m.on("click", () => openDetail(t.id));
+    m.addTo(S.layer);
+  });
+}
+
+function setMe(lat, lon) {
+  S.me = { lat, lon };
+  if (S.meMarker) S.map.removeLayer(S.meMarker);
+  S.meMarker = L.marker([lat, lon], {
+    icon: L.divIcon({ className: "", iconSize: [18, 18], html: '<div class="me"></div>' })
+  }).addTo(S.map);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   6. DATOS · Overpass (OpenStreetMap) con caché offline
+   ═══════════════════════════════════════════════════════════════ */
+const ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter"
+];
+
+async function fetchToilets(lat, lon) {
+  if (S.fetching) return;
+  S.fetching = true; latch("busy", "Buscando");
+  // El pestillo se libera SIEMPRE, pase lo que pase. Si se queda echado, la
+  // app no vuelve a buscar en toda la sesión.
+  try { await buscar(lat, lon); }
+  catch (e) { fallo("fetchToilets", e); latch("off", "Sin datos"); }
+  finally { S.fetching = false; }
+}
+
+async function buscar(lat, lon) {
+  // 1) Cola pendiente: en segundo plano. No puede retrasar la pantalla.
+  if (Cloud.on) {
+    Cloud.flush()
+      .then(n => { if (n) { toast(n + (n === 1 ? " envío pendiente publicado."
+                                              : " envíos pendientes publicados.")); render(); } })
+      .catch(e => fallo("flush.bg", e));
+  }
+
+  // 2) Base de datos de la comunidad (rápida)
+  if (Cloud.on) {
+    try {
+      await Cloud.nearby(lat, lon);
+    } catch (e) {
+      fallo("cloud.nearby", e);
+      if (DB.cloud && DB.cloud.items) S.cloud = DB.cloud.items;
+    }
+    render();                                  // fuera del try: si falla, es un bug, no la red
+  }
+
+  // 3) OpenStreetMap vía Overpass (lenta, pero es la que da volumen)
+  const q = `[out:json][timeout:25];
+(node["amenity"="toilets"](around:${RADIO},${lat},${lon});
+ way["amenity"="toilets"](around:${RADIO},${lat},${lon});
+ node["toilets:disposal"](around:${RADIO},${lat},${lon}););
+out center tags 200;`;
+
+  for (const url of ENDPOINTS) {
+    let j = null;
+    try {
+      const r = await fetchT(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(q)
+      }, 12000);
+      if (!r.ok) throw new Error(r.status);
+      j = await r.json();
+    } catch (e) { fallo("overpass:" + url, e); continue; }
+
+    S.osm = (j.elements || []).map(fromOSM).filter(Boolean);
+    S.lastFetch = Date.now();
+    DB.cache = { lat, lon, ts: Date.now(), items: S.osm }; DB.save("cache");
+    latch("ok", "Listo");
+    render();
+    if (Cloud.on) {
+      try {
+        await Cloud.reviews(S.list.slice(0, 60).map(t => t.id));
+      } catch (e) { fallo("cloud.reviews", e); }
+      render();
+    }
+    return;
+  }
+
+  if (DB.cache && DB.cache.items) {
+    S.osm = DB.cache.items;
+    latch("off", "Sin señal");
+    toast("Sin conexión. Mostrando la búsqueda guardada de " + hace(DB.cache.ts) + ".");
+  } else {
+    latch("off", "Sin datos");
+    toast("No se pudo cargar OpenStreetMap. Puedes añadir baños a mano.");
+  }
+  render();
+}
+
+function maybeRefetch() {
+  const c = S.map.getCenter();
+  if (!DB.cache || dist(c.lat, c.lng, DB.cache.lat, DB.cache.lon) > RADIO * 0.6)
+    fetchToilets(c.lat, c.lng);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   7. RENDER · lista
+   ═══════════════════════════════════════════════════════════════ */
+function render() {
+  const ref = S.me || { lat: S.map.getCenter().lat, lon: S.map.getCenter().lng };
+
+  // La comunidad manda sobre OSM; lo local pendiente de subir, sobre todo.
+  const by = new Map();
+  S.osm.forEach(t => by.set(t.id, t));
+  S.cloud.forEach(t => by.set(t.id, Object.assign({}, by.get(t.id) || {}, t)));
+  DB.mine.forEach(t => by.set(t.id, t));
+  // Retirados por la comunidad. Alcanza también a los de OpenStreetMap,
+  // que nunca pasan por nuestra tabla y antes eran irreportables.
+  const vivos = Array.from(by.values()).filter(t => !S.supp.has(t.id));
+
+  const pasa = t => {
+    const f = S.filters;
+    if (f.free     && t.free !== true) return false;
+    if (f.acc      && t.acc  !== true) return false;
+    if (f.baby     && t.baby !== true) return false;
+    if (f.open     && t.entry !== "open") return false;
+    if (f.h24      && t.h24  !== true) return false;
+    if (f.verified && t.conf.n < 2)    return false;
+    return t.entry !== "shut";
+  };
+
+  // Distancia y orden primero; la fusión de reseñas sólo sobre el tramo que
+  // se puede llegar a pintar. Antes se fusionaban los 400 para mostrar 40.
+  const cerca = vivos.map(t => { t.d = dist(ref.lat, ref.lon, t.lat, t.lon); return t; })
+                     .sort((a, b) => a.d - b.d);
+
+  let corte = 60;
+  S.list = cerca.slice(0, corte).map(merged).filter(pasa);
+  // Con filtros agresivos, ampliar el tramo antes de decir "nada por aquí".
+  while (S.list.length < 10 && corte < cerca.length) {
+    corte = Math.min(corte + 120, cerca.length);
+    S.list = cerca.slice(0, corte).map(merged).filter(pasa);
+  }
+
+  paintMarkers();
+  paintList();
+}
+
+function paintList() {
+  const box = $("#list"); box.innerHTML = "";
+
+  if (!S.list.length) {
+    box.appendChild(el("div", "empty",
+      `<b>Nada por aquí</b>
+       ${S.osm.length ? "Ningún baño cumple los filtros activos. Prueba a quitar alguno."
+                      : "Mueve el mapa para buscar en otra zona, o añade el primer baño tú mismo."}`));
+    return;
+  }
+
+  S.list.slice(0, 40).forEach((t, i) => {
+    const [pc, pt] = entryPlate(t.entry);
+    const card = el("button", "card");
+    card.type = "button";
+    card.innerHTML = `
+      <span class="rank">${String(i + 1).padStart(2, "0")}</span>
+      <span>
+        <h3>${esc(t.name)}</h3>
+        <span class="meta">
+          <span class="plate ${pc}">${pt}</span>
+          ${t.free === true  ? '<span class="plate open">Gratis</span>' : ""}
+          ${t.free === false ? '<span class="plate cust">De pago</span>' : ""}
+          ${t.acc  === true  ? '<span class="plate info">Accesible</span>' : ""}
+          ${t.baby === true  ? '<span class="plate info">Cambiador</span>' : ""}
+          ${t.h24  === true  ? '<span class="plate info">24 h</span>' : ""}
+          ${t.rating ? `<span class="plate info">${t.rating} / 5</span>` : ""}
+        </span>
+        <span class="conf">
+          <i class="${t.conf.n > 0 ? (t.conf.warn ? "warn" : "on") : ""}"></i>
+          <i class="${t.conf.n > 1 ? (t.conf.warn ? "warn" : "on") : ""}"></i>
+          <i class="${t.conf.n > 2 ? "on" : ""}"></i>
+          <span>${t.conf.txt}</span>
+        </span>
+      </span>
+      <span class="dist"><b>${minutos(t.d)}</b><small>MIN</small></span>`;
+    card.addEventListener("click", () => openDetail(t.id));
+    box.appendChild(card);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   8. PANELES
+   ═══════════════════════════════════════════════════════════════ */
+function showPane(name) {
+  ["paneList", "paneDetail", "paneReview", "paneForm", "paneInfo"].forEach(p => {
+    const n = document.getElementById(p);
+    if (p === "paneList") n.style.display = (name === "list") ? "" : "none";
+    else n.classList.toggle("on", p === "pane" + name[0].toUpperCase() + name.slice(1));
+  });
+  document.body.classList.toggle("sheet-open", name !== "list");
+}
+
+function sheetSize(cls) {
+  const s = $("#sheet");
+  s.classList.remove("peek", "full");
+  if (cls) s.classList.add(cls);
+}
+
+function openDetail(id) {
+  const t = S.list.find(x => x.id === id) || merged(
+    S.osm.concat(S.cloud, DB.mine).find(x => x.id === id) || {});
+  if (!t.id) return;
+  S.sel = id;
+  const ref = S.me || S.map.getCenter();
+  t.d = t.d != null ? t.d : dist(ref.lat, ref.lng || ref.lon, t.lat, t.lon);
+  const [pc, pt] = entryPlate(t.entry);
+
+  const nav = `https://www.google.com/maps/dir/?api=1&destination=${t.lat},${t.lon}&travelmode=walking`;
+  const yn = v => v === true ? "Sí" : v === false ? "No" : "—";
+
+  $("#paneDetail").innerHTML = `
+    <h2>${esc(t.name)}</h2>
+    <p class="sub"><b>${minutos(t.d)} min</b> a pie · ${Math.round(t.d)} m ·
+      ${t.src === "mine" ? "añadido por ti" : "OpenStreetMap"}</p>
+
+    <div class="meta" style="margin-bottom:16px">
+      <span class="plate ${pc}">${pt}</span>
+      ${t.hours ? `<span class="plate info">${esc(t.hours)}</span>` : ""}
+      ${t.price ? `<span class="plate cust">${esc(t.price)}</span>` : ""}
+    </div>
+
+    <button class="go wide" id="btnGo">Ir ahora ▸</button>
+
+    <div class="hr"></div>
+    <span class="lbl">Qué se sabe</span>
+    <div class="grid2" style="gap:6px 12px; font-size:14px">
+      <div>Gratuito<br><b>${yn(t.free)}</b></div>
+      <div>Accesible<br><b>${yn(t.acc)}</b></div>
+      <div>Cambiador<br><b>${yn(t.baby)}</b></div>
+      <div>Abierto 24 h<br><b>${yn(t.h24)}</b></div>
+    </div>
+    ${t.note ? `<p class="note" style="margin-top:14px"><b>Nota:</b> ${esc(t.note)}</p>` : ""}
+
+    <div class="conf" style="margin-top:16px">
+      <i class="${t.conf.n > 0 ? (t.conf.warn ? "warn" : "on") : ""}"></i>
+      <i class="${t.conf.n > 1 ? (t.conf.warn ? "warn" : "on") : ""}"></i>
+      <i class="${t.conf.n > 2 ? "on" : ""}"></i>
+      <span>${t.conf.txt}</span>
+    </div>
+
+    <div class="hr"></div>
+    <span class="lbl">Reseñas (${t.reviews ? t.reviews.length : 0})</span>
+    ${(t.reviews && t.reviews.length)
+      ? t.reviews.map(r => `
+          <div class="rev">
+            <div class="hd">
+              <b>${"●".repeat(r.rating)}${"○".repeat(5 - r.rating)}</b>
+              <time>${hace(r.ts)}${r.verified ? " · visita verificada" : ""}</time>
+            </div>
+            ${r.comment ? `<p>${esc(r.comment)}</p>` : ""}
+            ${r.rid ? `<div style="text-align:right; margin-top:4px">
+              <button class="lnk" data-rev="${r.rid}" data-act="${r.mine ? "retract" : "report"}"
+                      style="background:none;border:0;font:inherit;font-size:12px;opacity:.55;padding:2px 4px">
+                ${r.mine ? "retirar" : "reportar"}
+              </button></div>` : ""}
+          </div>`).join("")
+      : `<p class="note">Todavía nadie lo ha valorado. Si lo usas, cuéntalo: es lo que mantiene el dato vivo.</p>`}
+
+    <div class="rowbtns">
+      <button class="go alt" style="flex:1" id="btnRev">Valorar</button>
+      <button class="go ghost" style="flex:none; padding:0 16px" id="btnBack">Volver</button>
+    </div>
+
+    <div id="flagBox" style="display:none; margin-top:14px">
+      <span class="lbl">¿Qué pasa con este baño?</span>
+      <div class="meta" style="gap:6px; flex-wrap:wrap">
+        <button class="tog" data-r="closed">Ya no existe o está cerrado</button>
+        <button class="tog" data-r="fake">Es inventado</button>
+        <button class="tog" data-r="private">Es privado, no se puede entrar</button>
+        <button class="tog" data-r="dup">Está repetido</button>
+      </div>
+      <p class="note" style="margin-top:8px">
+        Hacen falta tres avisos de personas distintas para que desaparezca del mapa.
+        Nunca se borra: se puede reponer.
+      </p>
+    </div>
+
+    <div style="margin-top:10px; text-align:center">
+      <button class="go ghost" style="padding:0 14px; font-size:13px" id="btnFlag">Reportar un problema</button>
+      ${t.mine ? '<button class="go ghost" style="padding:0 14px; font-size:13px; margin-left:8px" id="btnRetract">Retirar el mío</button>' : ""}
+    </div>`;
+
+  $("#btnGo").onclick   = () => window.open(nav, "_blank");
+  $("#btnRev").onclick  = () => openReview(t);
+
+  $("#btnFlag").onclick = () => {
+    const box = $("#flagBox");
+    box.style.display = box.style.display === "none" ? "block" : "none";
+  };
+  $("#flagBox").querySelectorAll("[data-r]").forEach(b => {
+    b.onclick = async () => {
+      if (!Cloud.on) return toast("Conecta el servidor para poder reportar.");
+      b.disabled = true;
+      try {
+        await Cloud.report("toilet", t.id, b.dataset.r);
+        $("#flagBox").style.display = "none";
+        toast("Aviso enviado. Gracias: esto es lo que mantiene el mapa limpio.");
+      } catch (e) {
+        b.disabled = false;
+        toast(String(e.message || e).slice(0, 90));
+      }
+    };
+  });
+  if ($("#btnRetract")) $("#btnRetract").onclick = async () => {
+    if (!confirm("¿Retirar este baño del mapa? Dejará de verse para todo el mundo.")) return;
+    try {
+      await Cloud.retract("toilet", t.id);
+      toast("Retirado.");
+      S.sel = null; showPane("list"); sheetSize(null);
+      const c = S.me || S.map.getCenter();
+      await Cloud.nearby(c.lat, c.lng != null ? c.lng : c.lon);
+      render();
+    } catch (e) { toast(String(e.message || e).slice(0, 90)); }
+  };
+  $("#btnBack").onclick = () => { S.sel = null; showPane("list"); sheetSize(null); paintMarkers(); };
+
+  $("#paneDetail").querySelectorAll("[data-rev]").forEach(b => {
+    b.onclick = async () => {
+      if (!Cloud.on) return toast("Conecta el servidor para esto.");
+      const esMia = b.dataset.act === "retract";
+      if (esMia && !confirm("¿Retirar tu reseña?")) return;
+      b.disabled = true;
+      try {
+        if (esMia) await Cloud.retract("review", b.dataset.rev);
+        else       await Cloud.report("review", b.dataset.rev, "offensive");
+        b.textContent = esMia ? "retirada" : "avisado";
+        toast(esMia ? "Reseña retirada." : "Aviso enviado.");
+      } catch (e) { b.disabled = false; toast(String(e.message || e).slice(0, 90)); }
+    };
+  });
+
+  showPane("detail"); sheetSize("full");
+  S.map.panTo([t.lat, t.lon]);
+  paintMarkers();
+}
+
+/* ── Valorar: una sola pantalla, 15 segundos ────────────────── */
+function openReview(t) {
+  S.review = { id: t.id, rating: 0, clean: 0, attrs: {} };
+  const chip = (k, v, txt) => `<button class="tog" data-k="${k}" data-v="${v}" aria-pressed="false">${txt}</button>`;
+
+  $("#paneReview").innerHTML = `
+    <h2>${esc(t.name)}</h2>
+    <p class="sub">Cuenta cómo estaba. Lo que marques actualiza la ficha.</p>
+
+    <span class="lbl">Valoración general</span>
+    <div class="stars" id="stars">${[1,2,3,4,5].map(n =>
+      `<button class="star" data-n="${n}" aria-pressed="false">${n}</button>`).join("")}</div>
+
+    <div style="height:16px"></div>
+    <span class="lbl">Limpieza</span>
+    <div class="stars" id="clean">${[1,2,3,4,5].map(n =>
+      `<button class="star" data-n="${n}" aria-pressed="false">${n}</button>`).join("")}</div>
+
+    <div style="height:20px"></div>
+    <span class="lbl">Qué te encontraste</span>
+    <div class="grid2" id="attrs">
+      ${chip("free","true","Gratis")}
+      ${chip("free","false","De pago")}
+      ${chip("entry","open","Me dejaron pasar")}
+      ${chip("entry","cust","Solo clientes")}
+      ${chip("acc","true","Accesible")}
+      ${chip("baby","true","Cambiador")}
+      ${chip("h24","true","Abierto 24 h")}
+      ${chip("paper","true","Había papel")}
+    </div>
+
+    <div style="height:20px"></div>
+    <span class="lbl">Comentario (opcional)</span>
+    <textarea id="rvComment" maxlength="300" placeholder="Ej.: hay que pedir la llave en la barra."></textarea>
+
+    <div class="rowbtns">
+      <button class="go" style="flex:1" id="rvSave">Publicar</button>
+      <button class="go ghost" style="flex:none; padding:0 16px" id="rvCancel">Cancelar</button>
+    </div>`;
+
+  const pickOne = (sel, key) => {
+    document.querySelectorAll(sel + " .star").forEach(b => b.onclick = () => {
+      document.querySelectorAll(sel + " .star").forEach(x =>
+        x.setAttribute("aria-pressed", +x.dataset.n <= +b.dataset.n ? "true" : "false"));
+      S.review[key] = +b.dataset.n;
+    });
+  };
+  pickOne("#stars", "rating"); pickOne("#clean", "clean");
+
+  document.querySelectorAll("#attrs .tog").forEach(b => b.onclick = () => {
+    const k = b.dataset.k, v = b.dataset.v === "true" ? true : b.dataset.v === "false" ? false : b.dataset.v;
+    const on = b.getAttribute("aria-pressed") === "true";
+    document.querySelectorAll(`#attrs .tog[data-k="${k}"]`).forEach(x => x.setAttribute("aria-pressed", "false"));
+    if (on) { delete S.review.attrs[k]; }
+    else { b.setAttribute("aria-pressed", "true"); S.review.attrs[k] = v; }
+  });
+
+  $("#rvSave").onclick = () => {
+    if (!S.review.rating) return toast("Marca al menos la valoración general.");
+    const d = S.me ? dist(S.me.lat, S.me.lon, t.lat, t.lon) : null;
+    const r = {
+      rating: S.review.rating, clean: S.review.clean || S.review.rating,
+      attrs: S.review.attrs, comment: $("#rvComment").value.trim(),
+      ts: Date.now(), dist: d, verified: d != null && d <= 150
+    };
+    (DB.reviews[t.id] = DB.reviews[t.id] || []).unshift(r);
+    DB.save("reviews");
+
+    if (Cloud.on) {
+      // mlat/mlon: coordenadas del usuario para que el servidor mida la
+      // distancia él mismo. No se guardan; sólo sobrevive el resultado en
+      // metros. tlat/tlon: las del baño, por si sólo existe en OSM.
+      const op = { k: "review", d: Object.assign({ ref: t.id }, r, {
+        mlat: S.me ? S.me.lat : null, mlon: S.me ? S.me.lon : null,
+        tlat: t.lat, tlon: t.lon
+      }) };
+      Cloud.send(op)
+        .then(() => {
+          // El servidor manda: se retira la copia local o se vería duplicada.
+          const arr = DB.reviews[t.id] || [];
+          const i = arr.indexOf(r);
+          if (i >= 0) { arr.splice(i, 1); DB.save("reviews"); }
+          toast("Publicado. El servidor confirma si contaba como visita.");
+          Cloud.reviews([t.id])
+            .then(() => { render(); if (S.sel === t.id) openDetail(t.id); })
+            .catch(e => fallo("reviews.relectura", e));
+        })
+        .catch(err => {
+          const m = String(err.message || "");
+          fallo("review.send", err);
+          if (/one_per_day|23505/.test(m)) toast("Ya valoraste este baño hoy.");
+          else { Cloud.queue(op); toast("Guardado. Se publicará cuando haya conexión."); }
+        });
+    } else {
+      toast(r.verified ? "Guardado · visita verificada" : "Guardado en este dispositivo.");
+    }
+    render(); openDetail(t.id);
+  };
+  $("#rvCancel").onclick = () => openDetail(t.id);
+
+  showPane("review"); sheetSize("full");
+}
+
+/* ── Añadir baño: situar en el mapa y describir ─────────────── */
+function startPlacing() {
+  S.placing = true;
+  document.body.classList.add("placing");
+  showPane("form"); sheetSize("peek");
+  if (S.me) S.map.setView([S.me.lat, S.me.lon], 18);
+
+  $("#paneForm").innerHTML = `
+    <div class="rowbtns" style="background:none; padding-top:4px">
+      <button class="go" style="flex:1" id="fmHere">Es aquí ▸</button>
+      <button class="go ghost" style="flex:none; padding:0 16px" id="fmCancel">Cancelar</button>
+    </div>`;
+  $("#fmHere").onclick   = () => formStep2();
+  $("#fmCancel").onclick = () => { stopPlacing(); showPane("list"); sheetSize(null); };
+}
+function stopPlacing() { S.placing = false; document.body.classList.remove("placing"); }
+
+function formStep2() {
+  const c = S.map.getCenter();
+  S.form = { lat: c.lat, lon: c.lng, attrs: {} };
+  stopPlacing(); sheetSize("full");
+
+  const chip = (k, v, txt) => `<button class="tog" data-k="${k}" data-v="${v}" aria-pressed="false">${txt}</button>`;
+  $("#paneForm").innerHTML = `
+    <h2>Nuevo baño</h2>
+    <p class="sub">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</p>
+
+    <span class="lbl">Nombre del sitio</span>
+    <input type="text" id="fmName" maxlength="80" placeholder="Bar Iturri · Aseo del parque · C.C. Zubiarte">
+
+    <div style="height:18px"></div>
+    <span class="lbl">Acceso</span>
+    <div class="grid2" id="fmEntry">
+      ${chip("entry","open","Entra cualquiera")}
+      ${chip("entry","cust","Solo clientes")}
+    </div>
+
+    <div style="height:18px"></div>
+    <span class="lbl">Características</span>
+    <div class="grid2" id="fmAttrs">
+      ${chip("free","true","Gratis")}
+      ${chip("free","false","De pago")}
+      ${chip("acc","true","Accesible")}
+      ${chip("baby","true","Cambiador")}
+      ${chip("h24","true","Abierto 24 h")}
+      ${chip("key","true","Piden la llave")}
+    </div>
+
+    <div style="height:18px"></div>
+    <span class="lbl">Cómo llegar al baño (opcional)</span>
+    <textarea id="fmNote" maxlength="200" placeholder="Ej.: al fondo a la derecha, planta -1."></textarea>
+
+    <div class="rowbtns">
+      <button class="go" style="flex:1" id="fmSave">Guardar baño</button>
+      <button class="go ghost" style="flex:none; padding:0 16px" id="fmBack">Cancelar</button>
+    </div>`;
+
+  document.querySelectorAll("#fmEntry .tog, #fmAttrs .tog").forEach(b => b.onclick = () => {
+    const k = b.dataset.k, raw = b.dataset.v;
+    const v = raw === "true" ? true : raw === "false" ? false : raw;
+    const on = b.getAttribute("aria-pressed") === "true";
+    b.parentElement.querySelectorAll(`.tog[data-k="${k}"]`).forEach(x => x.setAttribute("aria-pressed", "false"));
+    if (on) delete S.form.attrs[k];
+    else { b.setAttribute("aria-pressed", "true"); S.form.attrs[k] = v; }
+  });
+
+  $("#fmSave").onclick = () => {
+    const name = $("#fmName").value.trim();
+    if (!name) return toast("Ponle un nombre para poder reconocerlo.");
+    const a = S.form.attrs;
+    const t = {
+      id: "mine:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name, lat: S.form.lat, lon: S.form.lon, src: "mine",
+      free: a.free != null ? a.free : null,
+      acc:  a.acc  != null ? a.acc  : null,
+      baby: a.baby != null ? a.baby : null,
+      h24:  a.h24  != null ? a.h24  : null,
+      entry: a.entry || null,
+      note: $("#fmNote").value.trim() || (a.key ? "Piden la llave." : null),
+      ts: Date.now()
+    };
+    DB.mine.unshift(t); DB.save("mine");
+
+    if (Cloud.on) {
+      const op = { k: "toilet", d: t };
+      Cloud.send(op)
+        .then(ref => {
+          // El servidor manda: sustituimos el registro local por el publicado
+          DB.mine = DB.mine.filter(x => x.id !== t.id); DB.save("mine");
+          toast("Baño publicado. Ya lo ve todo el mundo.");
+          maybeRefetch();
+        })
+        .catch(err => {
+          const m = String(err.message || "");
+          if (/menos de 15/.test(m)) {
+            DB.mine = DB.mine.filter(x => x.id !== t.id); DB.save("mine");
+            toast("Ya había un baño registrado ahí mismo.");
+            render();
+          } else { Cloud.queue(op); toast("Guardado. Se publicará cuando haya conexión."); }
+        });
+    } else {
+      toast("Baño guardado en este dispositivo.");
+    }
+    render(); showPane("list"); sheetSize(null);
+  };
+  $("#fmBack").onclick = () => { showPane("list"); sheetSize(null); };
+}
+
+/* ── Ajustes / datos ────────────────────────────────────────── */
+function openInfo() {
+  const nRev = Object.values(DB.reviews).reduce((s, a) => s + a.length, 0);
+  $("#paneInfo").innerHTML = `
+    <h2>Tus datos</h2>
+    <p class="sub">${Cloud.on
+      ? "Lo que publicas se comparte con el resto. Tu ubicación exacta no se guarda en ningún sitio."
+      : "Todo se queda en este dispositivo. No sale de aquí."}</p>
+
+    <div class="grid2" style="gap:12px; font-size:14px">
+      <div><span class="lbl">Baños añadidos</span><b style="font-family:var(--mono);font-size:22px">${DB.mine.length}</b></div>
+      <div><span class="lbl">Reseñas</span><b style="font-family:var(--mono);font-size:22px">${nRev}</b></div>
+    </div>
+
+    <div class="hr"></div>
+    <span class="lbl">Servidor</span>
+    <div class="meta" style="margin-bottom:10px">
+      <span class="plate ${Cloud.on ? "open" : "cust"}">${Cloud.on ? "Conectado" : "Solo este móvil"}</span>
+      ${Auth.uid ? '<span class="plate open">Sesión anónima activa</span>' : ""}
+      ${DB.outbox.length ? `<span class="plate cust">${DB.outbox.length} sin enviar</span>` : ""}
+    </div>
+    <input type="text" id="cfUrl" placeholder="https://xxxx.supabase.co" value="${esc(DB.cfg.url)}">
+    <div style="height:8px"></div>
+    <input type="text" id="cfKey" placeholder="Clave anon (publishable)" value="${esc(DB.cfg.key)}">
+    <div style="height:10px"></div>
+    <button class="go alt wide" id="cfSave">Conectar</button>
+    <p class="note" style="margin-top:10px">
+      Con el servidor conectado, las altas y reseñas se comparten con el resto de usuarios.
+      Sin él, la app funciona igual pero los datos se quedan aquí.
+    </p>
+    <p class="note" style="margin-top:8px">
+      Al conectar se abre una <b>sesión anónima</b>: ni correo, ni nombre, ni contraseña.
+      Sólo un identificador firmado por el servidor, para frenar el spam y para que puedas
+      retirar lo que publiques. Tu ubicación no se guarda nunca en ningún sitio.
+    </p>
+
+    <div class="hr"></div>
+    <span class="lbl">Quién recibe qué</span>
+    <p class="note">
+      <b>OpenStreetMap</b> recibe la zona que estás mirando, para servir el mapa.<br>
+      <b>Overpass</b> recibe el centro de tu búsqueda, para devolver los baños de esa zona.<br>
+      ${Cloud.on ? "<b>Supabase</b> (Fráncfort) guarda lo que publicas y tu IP en el registro de sesión. Al valorar, tus coordenadas viajan para medir la distancia al baño y se descartan al momento: sólo se guardan los metros.<br>" : ""}
+      Los baños base vienen de <b>OpenStreetMap</b> (licencia ODbL) y se descargan al vuelo.
+      La última búsqueda queda guardada para funcionar sin cobertura.
+      Tus altas y reseñas son tuyas: expórtalas cuando quieras.
+    </p>
+
+    <div style="height:16px"></div>
+    <button class="go alt wide" id="ifExport">Exportar mis datos (JSON)</button>
+    <div style="height:8px"></div>
+    <button class="go ghost wide" id="ifImport">Importar copia</button>
+    <input type="file" id="ifFile" accept="application/json" style="display:none">
+
+    ${store.native ? "" : '<p class="note" style="margin-top:16px;color:#8F2A20"><b>Aviso:</b> el almacenamiento del navegador está bloqueado aquí, así que los datos se pierden al recargar. En un navegador normal o en la app compilada funciona bien.</p>'}
+
+    <div class="rowbtns"><button class="go ghost wide" id="ifBack">Volver</button></div>`;
+
+  $("#cfSave").onclick = async () => {
+    DB.cfg = { url: $("#cfUrl").value.trim(), key: $("#cfKey").value.trim() };
+    DB.save("cfg");
+    Auth.borra();                       // el servidor pudo cambiar: sesión nueva
+    if (!Cloud.on) { toast("Desconectado. La app sigue funcionando en local."); return openInfo(); }
+    latch("busy", "Probando");
+    try {
+      try { await Auth.ensure(); }
+      catch (e) { toast(String(e.message || e).slice(0, 140)); }
+      const c = S.me || S.map.getCenter();
+      await Cloud.nearby(c.lat, c.lng != null ? c.lng : c.lon);
+      latch("ok", "Listo");
+      toast("Servidor conectado. " + S.cloud.length + " baños de la comunidad.");
+      render(); openInfo();
+    } catch (e) {
+      latch("off", "Sin servidor");
+      toast("No responde. Revisa la URL y la clave.");
+    }
+  };
+
+  $("#ifExport").onclick = () => {
+    const blob = new Blob([JSON.stringify(
+      { mine: DB.mine, reviews: DB.reviews, outbox: DB.outbox.length, log: LOG, v: 2 }, null, 2)],
+                          { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "cerca-banos-" + new Date().toISOString().slice(0, 10) + ".json";
+    a.click();
+  };
+  $("#ifImport").onclick = () => $("#ifFile").click();
+  $("#ifFile").onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const j = JSON.parse(rd.result);
+        if (j.mine) DB.mine = j.mine.concat(DB.mine);
+        if (j.reviews) Object.keys(j.reviews).forEach(k =>
+          DB.reviews[k] = (j.reviews[k] || []).concat(DB.reviews[k] || []));
+        DB.save("mine"); DB.save("reviews"); render(); openInfo();
+        toast("Copia importada.");
+      } catch (err) { toast("Ese archivo no tiene el formato esperado."); }
+    };
+    rd.readAsText(f);
+  };
+  $("#ifBack").onclick = () => { showPane("list"); sheetSize(null); };
+
+  showPane("info"); sheetSize("full");
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   9. GESTOS Y EVENTOS
+   ═══════════════════════════════════════════════════════════════ */
+function initUI() {
+  // filtros
+  document.querySelectorAll("#chips .chip").forEach(c => c.onclick = () => {
+    const on = c.getAttribute("aria-pressed") === "true";
+    c.setAttribute("aria-pressed", on ? "false" : "true");
+    S.filters[c.dataset.f] = !on;
+    render();
+  });
+
+  // arrastre de la hoja
+  const sheet = $("#sheet"), grip = $("#grip");
+  let y0 = null;
+  const down = e => { y0 = (e.touches ? e.touches[0] : e).clientY; };
+  const up = e => {
+    if (y0 == null) return;
+    const y1 = (e.changedTouches ? e.changedTouches[0] : e).clientY, dy = y1 - y0;
+    y0 = null;
+    if (Math.abs(dy) < 24) {                    // toque: alterna
+      sheet.classList.contains("full") ? sheetSize(null)
+        : sheet.classList.contains("peek") ? sheetSize(null) : sheetSize("full");
+    } else if (dy < 0) sheetSize("full");
+    else sheetSize(sheet.classList.contains("full") ? null : "peek");
+  };
+  grip.addEventListener("touchstart", down, { passive: true });
+  grip.addEventListener("touchend", up);
+  grip.addEventListener("mousedown", down);
+  grip.addEventListener("mouseup", up);
+  grip.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); up({ changedTouches: null, clientY: y0 = 0 }); }
+  });
+
+  $("#btnAdd").onclick = startPlacing;
+  $("#btnLocate").onclick = () => {
+    if (S.me) { S.map.setView([S.me.lat, S.me.lon], 17); render(); }
+    else locate(true);
+  };
+  // pulsación larga en el logo → ajustes
+  let hold;
+  $(".brand").addEventListener("pointerdown", () => hold = setTimeout(openInfo, 550));
+  $(".brand").addEventListener("pointerup",   () => clearTimeout(hold));
+  $(".brand").addEventListener("pointerleave",() => clearTimeout(hold));
+  $(".brand").addEventListener("click", openInfo);
+
+  window.addEventListener("online",  () => { latch("busy", "Buscando"); maybeRefetch(); });
+  window.addEventListener("offline", () => latch("off", "Sin señal"));
+}
+
+function locate(center) {
+  if (!navigator.geolocation) { toast("Este dispositivo no comparte la ubicación."); return; }
+  navigator.geolocation.getCurrentPosition(p => {
+    setMe(p.coords.latitude, p.coords.longitude);
+    if (center !== false) S.map.setView([p.coords.latitude, p.coords.longitude], 17);
+    fetchToilets(p.coords.latitude, p.coords.longitude);
+  }, err => {
+    latch("off", "Sin GPS");
+    toast("Sin ubicación. Mueve el mapa a tu zona y buscaré ahí.");
+    maybeRefetch();
+  }, { enableHighAccuracy: true, timeout: 9000, maximumAge: 30000 });
+
+  navigator.geolocation.watchPosition(p => {
+    setMe(p.coords.latitude, p.coords.longitude);
+    if (!document.body.classList.contains("sheet-open")) render();
+  }, () => {}, { enableHighAccuracy: true, maximumAge: 20000 });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   10. ARRANQUE
+   ═══════════════════════════════════════════════════════════════ */
+initMap();
+initUI();
+
+// pinta de inmediato lo que haya en caché: nada de pantalla en blanco
+if (DB.cloud && DB.cloud.items) S.cloud = DB.cloud.items;
+if (DB.cache && DB.cache.items) {
+  S.osm = DB.cache.items;
+  S.map.setView([DB.cache.lat, DB.cache.lon], 16);
+}
+if (S.osm.length || S.cloud.length) render();
+locate();
+setTimeout(() => { if (!S.osm.length && !S.fetching) maybeRefetch(); }, 3500);
+</script>
+</body>
+</html>

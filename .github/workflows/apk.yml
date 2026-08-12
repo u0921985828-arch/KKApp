@@ -1,0 +1,103 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Colócalo en:  .github/workflows/apk.yml
+#
+#  Sustituye al assembleDebug del manual. Un APK debug va firmado con la
+#  clave de depuración compartida, lleva android:debuggable="true" y permite
+#  copia de seguridad automática: cualquiera con ADB lee el localStorage del
+#  WebView, y con él el JWT de sesión. No es distribuible.
+#
+#  ANTES DE USARLO, genera el keystore una vez en tu máquina:
+#
+#    keytool -genkey -v -keystore cerca.keystore -alias cerca \
+#            -keyalg RSA -keysize 2048 -validity 10000
+#    base64 -w0 cerca.keystore > cerca.b64
+#
+#  GUARDA EL .keystore FUERA DE GITHUB Y HAZ COPIA. Si lo pierdes no podrás
+#  volver a publicar bajo el mismo applicationId. Nunca. No hay recurso.
+#
+#  Y en el repo → Settings → Secrets and variables → Actions:
+#    KEYSTORE_B64   (el contenido de cerca.b64)
+#    KEY_ALIAS      (cerca)
+#    KEY_PASSWORD   (la contraseña de la clave)
+#    STORE_PASSWORD (la del almacén)
+# ═══════════════════════════════════════════════════════════════════════
+
+name: APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Chequeo mínimo: sintaxis del bloque de script antes de compilar nada.
+      # Es el 80% de las regresiones por el 1% del esfuerzo.
+      - name: Verificar sintaxis
+        run: |
+          sed -n '/<script>/,/<\/script>/p' www/index.html | sed '1d;$d' > /tmp/app.js
+          node --check /tmp/app.js
+
+      - name: Preparar proyecto
+        run: |
+          npm install
+          npx cap sync android
+
+      - name: Restaurar keystore
+        run: echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > android/app/cerca.keystore
+
+      - name: Compilar release firmado
+        working-directory: android
+        env:
+          KEYSTORE_FILE:  cerca.keystore
+          KEY_ALIAS:      ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:   ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: ./gradlew assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cerca-release
+          path: android/app/build/outputs/apk/release/*.apk
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Además, en android/app/build.gradle, dentro de android { }:
+#
+#    signingConfigs {
+#      release {
+#        storeFile     file(System.getenv("KEYSTORE_FILE") ?: "cerca.keystore")
+#        storePassword System.getenv("STORE_PASSWORD")
+#        keyAlias      System.getenv("KEY_ALIAS")
+#        keyPassword   System.getenv("KEY_PASSWORD")
+#      }
+#    }
+#    buildTypes {
+#      release {
+#        signingConfig signingConfigs.release
+#        minifyEnabled true
+#        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+#                      'proguard-rules.pro'
+#      }
+#    }
+#
+#  Y en android/app/src/main/AndroidManifest.xml, en <application ...>:
+#
+#    android:allowBackup="false"
+#    android:usesCleartextTraffic="false"
+#
+#  El primero impide que un `adb backup` extraiga el localStorage con el JWT
+#  dentro. El segundo cierra la puerta a cualquier petición en claro.
+# ═══════════════════════════════════════════════════════════════════════
