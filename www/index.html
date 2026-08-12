@@ -771,7 +771,19 @@ const Cloud = {
     for (const op of DB.outbox) {
       if (n >= max || (op.next || 0) > Date.now()) { left.push(op); continue; }
       n++;
-      try { await this.send(op); sent++; }
+      try {
+        await this.send(op);
+        sent++;
+        // El servidor manda: fuera la copia local, o se vería duplicada
+        // (el envío directo ya lo hace; la cola lo dejaba a medias).
+        if (op.k === "toilet") {
+          DB.mine = DB.mine.filter(x => x.id !== op.d.id); DB.save("mine");
+        } else {
+          const arr = DB.reviews[op.d.ref] || [];
+          const i = arr.findIndex(r => r.ts === op.d.ts);
+          if (i >= 0) { arr.splice(i, 1); DB.save("reviews"); }
+        }
+      }
       catch (e) {
         const m = String(e.message || "");
         fallo("cloud.flush", e);
@@ -902,6 +914,10 @@ out center tags 200;`;
     S.osm = DB.cache.items;
     latch("off", "Sin señal");
     toast("Sin conexión. Mostrando la búsqueda guardada de " + hace(DB.cache.ts) + ".");
+  } else if (S.cloud.length) {
+    // OSM no responde pero la comunidad sí: eso no es "sin datos".
+    latch("ok", "Listo");
+    toast("OpenStreetMap no responde. Mostrando los baños de la comunidad.");
   } else {
     latch("off", "Sin datos");
     toast("No se pudo cargar OpenStreetMap. Puedes añadir baños a mano.");
@@ -922,9 +938,17 @@ function render() {
   const ref = S.me || { lat: S.map.getCenter().lat, lon: S.map.getCenter().lng };
 
   // La comunidad manda sobre OSM; lo local pendiente de subir, sobre todo.
+  // Pero un null de la nube no borra un dato que OSM sí conoce (horario,
+  // precio, accesible…): solo pisan los valores con contenido.
   const by = new Map();
   S.osm.forEach(t => by.set(t.id, t));
-  S.cloud.forEach(t => by.set(t.id, Object.assign({}, by.get(t.id) || {}, t)));
+  S.cloud.forEach(t => {
+    const base = by.get(t.id);
+    if (!base) return by.set(t.id, t);
+    const m = Object.assign({}, base);
+    Object.keys(t).forEach(k => { if (t[k] != null) m[k] = t[k]; });
+    by.set(t.id, m);
+  });
   DB.mine.forEach(t => by.set(t.id, t));
   // Retirados por la comunidad. Alcanza también a los de OpenStreetMap,
   // que nunca pasan por nuestra tabla y antes eran irreportables.
@@ -1023,7 +1047,7 @@ function openDetail(id) {
   if (!t.id) return;
   S.sel = id;
   const ref = S.me || S.map.getCenter();
-  t.d = t.d != null ? t.d : dist(ref.lat, ref.lng || ref.lon, t.lat, t.lon);
+  t.d = t.d != null ? t.d : dist(ref.lat, ref.lng != null ? ref.lng : ref.lon, t.lat, t.lon);
   const [pc, pt] = entryPlate(t.entry);
 
   const nav = `https://www.google.com/maps/dir/?api=1&destination=${t.lat},${t.lon}&travelmode=walking`;
@@ -1436,6 +1460,14 @@ function openInfo() {
       await Cloud.nearby(c.lat, c.lng != null ? c.lng : c.lon);
       latch("ok", "Listo");
       toast("Servidor conectado. " + S.cloud.length + " baños de la comunidad.");
+      // Lo añadido antes de conectar ahora ya puede publicarse.
+      DB.mine.forEach(t => {
+        if (!DB.outbox.some(o => o.k === "toilet" && o.d && o.d.id === t.id))
+          Cloud.queue({ k: "toilet", d: t });
+      });
+      if (DB.outbox.length) Cloud.flush()
+        .then(n => { if (n) { toast(n + (n === 1 ? " alta pendiente publicada." : " altas pendientes publicadas.")); render(); } })
+        .catch(e => fallo("flush.conectar", e));
       render(); openInfo();
     } catch (e) {
       latch("off", "Sin servidor");

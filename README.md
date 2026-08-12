@@ -25,11 +25,14 @@ cerca/
 
 1. **Supabase.** Proyecto nuevo en Fráncfort (`eu-central-1`, por el RGPD).
    En SQL Editor, pegar y ejecutar `sql/01`, `sql/02` y `sql/03`, **en ese orden**.
-2. **Panel de Supabase**, dos interruptores que el SQL no puede tocar:
+2. **Panel de Supabase**, un interruptor que el SQL no puede tocar:
    - Authentication → Sign In / Providers → **Anonymous sign-ins: ON**
-   - Authentication → **Bot & Abuse Protection → Turnstile: ON**
-     No es opcional: sin él, acuñar identidades anónimas es gratis y el
-     auto-ocultado por reportes se vuelve una palanca de censura.
+   - Authentication → Bot & Abuse Protection → Turnstile: **déjalo OFF por
+     ahora**. La app todavía no manda el token de captcha al abrir sesión
+     (`www/index.html` llama a `/auth/v1/signup` sin `gotrue_meta_security`),
+     así que activarlo rompe el inicio de sesión anónimo. Es la tarea
+     pendiente más urgente: sin Turnstile, acuñar identidades anónimas es
+     gratis; mientras tanto lo mitiga el sistema de pesos de `sql/03`.
 3. **Conectar la app.** Abrir `www/index.html`, tocar el logo CERCA → Ajustes,
    pegar Project URL y clave `anon`, Conectar.
 

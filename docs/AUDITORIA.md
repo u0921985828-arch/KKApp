@@ -496,3 +496,59 @@ El problema no está donde suele buscarse. **No hay un solo hallazgo de rendimie
 5. **A-02** (Turnstile + reputación) — puede esperar a que haya usuarios, pero no a que haya spam.
 
 Lo demás aguanta hasta después de la beta.
+
+---
+
+# Auditoría 2 · 2026-08-12 · Puesta en marcha real
+
+Primera ejecución de los tres SQL contra un proyecto Supabase limpio, lectura
+completa de `www/index.html` cruzada con el esquema desplegado, y revisión de
+los workflows. Ocho hallazgos, todos aplicados.
+
+## SQL: los scripts no se podían ejecutar en orden (CRÍTICO, aplicado)
+
+Nadie había ejecutado los tres archivos seguidos contra un proyecto virgen.
+Tres errores lo impedían:
+
+- **01 y 02**: `created_at::date` no es inmutable y Postgres rechaza el índice
+  `reviews_one_per_day`. La 03 ya usaba la forma correcta
+  (`at time zone 'Europe/Madrid'`); ahora la usan las tres.
+- **02**: `toilets_nearby` y `reviews_for` cambian su tipo de retorno
+  (columna `mine`) y `create or replace` no puede hacer eso → `drop function`
+  previo.
+- **03**: `mod_queue` mete la columna `peso` en medio de la vista y
+  `create or replace view` no reordena columnas → `drop view` previo.
+
+## La documentación exigía Turnstile pero la app no lo soporta (CRÍTICO, documentado)
+
+`www/index.html` llama a `/auth/v1/signup` sin `gotrue_meta_security`, así que
+activar Turnstile en el panel rompe el inicio de sesión anónimo entero.
+README y PUESTA_EN_MARCHA ahora lo dicen; implementar el captcha en la app
+sigue siendo la tarea pendiente más urgente (cierra de verdad A-02).
+
+## App: cuatro fallos funcionales (aplicados)
+
+- **La nube pisaba con null los datos de OSM.** Un baño presente en ambas
+  fuentes perdía horario, precio y atributos que OSM sí conoce. Ahora solo
+  pisan los valores con contenido.
+- **La cola offline dejaba copias duplicadas.** El envío directo retiraba la
+  copia local al publicar; el que salía por la cola, no: baño y reseña
+  aparecían dos veces. La cola ahora hace lo mismo que el envío directo.
+- **Lo añadido antes de conectar no se publicaba nunca.** Conectar el servidor
+  no encolaba los baños ya guardados en el móvil; se quedaban locales para
+  siempre. Al conectar ahora se encolan y publican.
+- **"SIN DATOS" con datos.** Con Overpass caído pero servidor conectado, el
+  pestillo decía "Sin datos" aunque la lista mostraba baños de la comunidad.
+
+## Workflow del APK roto (aplicado)
+
+`android/` está en `.gitignore` y el workflow hacía `cap sync` sin generarla:
+fallaba en el primer paso. Además pedía editar a mano un `build.gradle` que se
+regenera en cada build. Ahora el workflow crea la plataforma, inyecta la firma
+y endurece el manifest él mismo. Pendiente de probar con el keystore real.
+
+## Menores
+
+- `PUESTA_EN_MARCHA.md` nombraba archivos SQL que no existen en el repo.
+- `openDetail` trataba longitud 0 como "sin valor" (`ref.lng || ref.lon`);
+  el meridiano de Greenwich cruza España.

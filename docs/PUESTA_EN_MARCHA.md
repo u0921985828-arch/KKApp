@@ -209,22 +209,24 @@ No compiles el APK antes de tener claro el flujo. Cada iteración en web son seg
 
 El orden de ejecución del SQL, sin saltarse ninguno:
 
-1. `supabase_schema.sql` — esquema base
-2. `supabase_migracion_02_seguridad.sql` — identidad, reportes, borrado suave
-3. `supabase_migracion_03_auditoria.sql` — correcciones de auditoría
+1. `sql/01_esquema.sql` — esquema base
+2. `sql/02_seguridad.sql` — identidad, reportes, borrado suave
+3. `sql/03_auditoria.sql` — correcciones de auditoría
 
 Los tres son idempotentes: se pueden repetir sin romper nada.
 
-**Dos ajustes en el panel que el SQL no puede hacer por ti:**
+**Un ajuste en el panel que el SQL no puede hacer por ti:**
 
 - Authentication → Sign In / Providers → **Anonymous sign-ins: ON**
-- Authentication → **Bot & Abuse Protection → Cloudflare Turnstile: ON**
 
-El segundo no es opcional. Sin él, acuñar identidades anónimas es gratis, y
-el auto-ocultado por reportes se convierte en una palanca de censura: tres
-sesiones desde un mismo móvil retiran el baño de la competencia. El sistema
-de pesos de la migración 03 lo mitiga, pero Turnstile es lo que sube el
-coste de entrada.
+**Cloudflare Turnstile: todavía NO.** La app abre sesión llamando a
+`/auth/v1/signup` sin token de captcha; si activas Turnstile en el panel,
+Supabase rechaza ese signup y la app entera se queda sin poder publicar.
+Sigue siendo la protección correcta —sin ella, acuñar identidades anónimas
+es gratis y el auto-ocultado por reportes se convierte en una palanca de
+censura— pero exige primero implementar el widget y el
+`gotrue_meta_security.captcha_token` en `www/index.html`. Hasta entonces lo
+mitiga el sistema de pesos de la migración 03.
 
 **Y uno en Postgres, si activas registro de sentencias:** `log_statement`
 debe quedar en `none`. La función `add_review` recibe las coordenadas del

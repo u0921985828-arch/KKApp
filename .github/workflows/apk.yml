@@ -54,7 +54,36 @@ jobs:
       - name: Preparar proyecto
         run: |
           npm install
+          # android/ está en .gitignore: se regenera aquí en cada build.
+          [ -d android ] || npx cap add android
           npx cap sync android
+
+      # La carpeta android/ se acaba de generar, así que la configuración de
+      # firma y el endurecimiento del manifest se aplican aquí, no a mano.
+      - name: Configurar firma y manifest
+        run: |
+          cat >> android/app/build.gradle <<'EOF'
+
+          android {
+            signingConfigs {
+              release {
+                storeFile     file(System.getenv("KEYSTORE_FILE") ?: "cerca.keystore")
+                storePassword System.getenv("STORE_PASSWORD")
+                keyAlias      System.getenv("KEY_ALIAS")
+                keyPassword   System.getenv("KEY_PASSWORD")
+              }
+            }
+            buildTypes {
+              release {
+                signingConfig signingConfigs.release
+              }
+            }
+          }
+          EOF
+          M=android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:allowBackup="true"/android:allowBackup="false"/' "$M"
+          grep -q 'android:allowBackup' "$M" || sed -i 's/<application /<application android:allowBackup="false" /' "$M"
+          grep -q 'android:usesCleartextTraffic' "$M" || sed -i 's/<application /<application android:usesCleartextTraffic="false" /' "$M"
 
       - name: Restaurar keystore
         run: echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > android/app/cerca.keystore
@@ -74,30 +103,12 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
 
 # ═══════════════════════════════════════════════════════════════════════
-#  Además, en android/app/build.gradle, dentro de android { }:
+#  La configuración de firma y el endurecimiento del manifest (allowBackup
+#  y usesCleartextTraffic en false) los aplica el paso "Configurar firma y
+#  manifest": android/ se regenera en cada build, así que editarlo a mano
+#  no serviría de nada.
 #
-#    signingConfigs {
-#      release {
-#        storeFile     file(System.getenv("KEYSTORE_FILE") ?: "cerca.keystore")
-#        storePassword System.getenv("STORE_PASSWORD")
-#        keyAlias      System.getenv("KEY_ALIAS")
-#        keyPassword   System.getenv("KEY_PASSWORD")
-#      }
-#    }
-#    buildTypes {
-#      release {
-#        signingConfig signingConfigs.release
-#        minifyEnabled true
-#        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
-#                      'proguard-rules.pro'
-#      }
-#    }
-#
-#  Y en android/app/src/main/AndroidManifest.xml, en <application ...>:
-#
-#    android:allowBackup="false"
-#    android:usesCleartextTraffic="false"
-#
-#  El primero impide que un `adb backup` extraiga el localStorage con el JWT
-#  dentro. El segundo cierra la puerta a cualquier petición en claro.
+#  allowBackup=false impide que un `adb backup` extraiga el localStorage
+#  con el JWT dentro. usesCleartextTraffic=false cierra la puerta a
+#  cualquier petición en claro.
 # ═══════════════════════════════════════════════════════════════════════
