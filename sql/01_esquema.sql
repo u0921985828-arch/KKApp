@@ -44,9 +44,10 @@ create table if not exists public.reviews (
 
 create index if not exists reviews_ref_idx on public.reviews (toilet_ref, created_at desc);
 
--- Una reseña por baño, dispositivo y día
+-- Una reseña por baño, dispositivo y día (día local; ::date a secas no es
+-- inmutable y Postgres lo rechaza en un índice)
 create unique index if not exists reviews_one_per_day
-  on public.reviews (toilet_ref, device_id, (created_at::date));
+  on public.reviews (toilet_ref, device_id, ((created_at at time zone 'Europe/Madrid')::date));
 
 -- ─────────────────────── ANTI-SPAM (triggers) ─────────────────────────
 -- Sin cuentas de usuario, el freno es el dispositivo + los límites por hora.

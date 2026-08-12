@@ -289,7 +289,11 @@ grant execute on function public.reviews_for(text[]) to anon, authenticated;
 -- Una vista se ejecuta con permisos de su propietario salvo que se diga
 -- lo contrario. Hoy sólo la protegen los permisos; eso es una sola barrera.
 
-create or replace view public.mod_queue as
+-- La columna peso entra en medio de la definición y create or replace view
+-- no admite reordenar columnas: hay que soltar la vista primero.
+drop view if exists public.mod_queue;
+
+create view public.mod_queue as
 select rp.kind, rp.target_ref,
        count(distinct rp.created_by)                       as reportes,
        coalesce(sum(public.peso_reporte(rp.created_by)), 0) as peso,

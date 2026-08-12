@@ -45,7 +45,7 @@ create index if not exists reviews_visible_idx on public.reviews (toilet_ref, cr
 -- Una reseña por baño y persona al día (antes era por dispositivo)
 drop index if exists public.reviews_one_per_day;
 create unique index if not exists reviews_one_per_day_user
-  on public.reviews (toilet_ref, created_by, (created_at::date));
+  on public.reviews (toilet_ref, created_by, ((created_at at time zone 'Europe/Madrid')::date));
 
 -- ─────────────────────── 2. TABLA DE REPORTES ─────────────────────────
 
@@ -276,6 +276,11 @@ end $$;
 
 -- ─────────────── 7. CONSULTAS ACTUALIZADAS (RPC) ──────────────────────
 -- Sólo cuentan las reseñas visibles y los baños activos.
+-- Cambian el tipo de retorno respecto a la 01 (columna mine), y Postgres
+-- no permite eso con create or replace: hay que soltarlas primero.
+
+drop function if exists public.toilets_nearby(double precision, double precision, integer);
+drop function if exists public.reviews_for(text[]);
 
 create or replace function public.toilets_nearby(
   lat double precision, lng double precision, radius_m integer default 1600
