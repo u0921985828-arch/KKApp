@@ -1,0 +1,86 @@
+name: verificar-supabase
+
+on:
+  workflow_dispatch:
+    inputs:
+      supabase_url:
+        description: 'Project URL (https://xxxx.supabase.co)'
+        required: true
+      anon_key:
+        description: 'Clave anon (publica por diseno)'
+        required: true
+
+permissions: {}
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprobar proyecto Supabase
+        env:
+          URL: ${{ inputs.supabase_url }}
+          KEY: ${{ inputs.anon_key }}
+        run: |
+          set -u
+          pass=0; fail=0
+          ok()   { echo "PASS: $1"; pass=$((pass+1)); }
+          bad()  { echo "FAIL: $1"; fail=$((fail+1)); }
+
+          URL="${URL%/}"
+
+          # 1. Auth accesible
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$URL/auth/v1/health" -H "apikey: $KEY")
+          [ "$code" = 200 ] && ok "Auth accesible (health 200)" || bad "Auth no responde (HTTP $code) — revisa la URL"
+
+          # 2. Clave anon valida (REST responde con la clave)
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$URL/rest/v1/" -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          [ "$code" = 200 ] && ok "Clave anon valida" || bad "REST rechaza la clave (HTTP $code) — clave anon incorrecta"
+
+          # 3. Esquema aplicado: tablas y RPC visibles en el OpenAPI
+          spec=$(curl -s "$URL/rest/v1/" -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          for t in toilets reviews reports suppressions; do
+            echo "$spec" | grep -q "\"/$t\"" && ok "Tabla $t existe" || bad "Falta la tabla $t — ejecuta los SQL en orden"
+          done
+          for f in toilets_nearby add_toilet add_review reviews_for report_item retract; do
+            echo "$spec" | grep -q "/rpc/$f" && ok "RPC $f existe" || bad "Falta la funcion $f — reejecuta sql/02 y sql/03"
+          done
+
+          # 4. RLS: UPDATE con clave anon sin sesion debe quedar bloqueado
+          resp=$(curl -s -w '\n%{http_code}' -X PATCH "$URL/rest/v1/toilets?id=eq.00000000-0000-0000-0000-000000000000" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            -H "Content-Type: application/json" -H "Prefer: return=representation" -d '{"name":"x"}')
+          code=$(echo "$resp" | tail -1); body=$(echo "$resp" | head -1)
+          if [ "$code" = 401 ] || [ "$code" = 403 ] || { [ "$code" = 200 ] && [ "$body" = "[]" ]; }; then
+            ok "RLS bloquea UPDATE"
+          else
+            bad "UPDATE no esta bloqueado (HTTP $code) — revisa las politicas RLS"
+          fi
+
+          # 5. DELETE igualmente bloqueado
+          resp=$(curl -s -w '\n%{http_code}' -X DELETE "$URL/rest/v1/toilets?id=eq.00000000-0000-0000-0000-000000000000" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Prefer: return=representation")
+          code=$(echo "$resp" | tail -1); body=$(echo "$resp" | head -1)
+          if [ "$code" = 401 ] || [ "$code" = 403 ] || { [ "$code" = 200 ] && [ "$body" = "[]" ]; }; then
+            ok "RLS bloquea DELETE"
+          else
+            bad "DELETE no esta bloqueado (HTTP $code) — revisa las politicas RLS"
+          fi
+
+          # 6. Sesion anonima: sin captcha debe fallar SOLO por Turnstile.
+          #    "captcha" en la respuesta = anonimo ON y Turnstile ON (lo esperado).
+          #    Usuario creado = Turnstile OFF (mal). "disabled" = anonimo OFF (mal).
+          resp=$(curl -s -X POST "$URL/auth/v1/signup" \
+            -H "apikey: $KEY" -H "Content-Type: application/json" -d '{"data":{}}')
+          if echo "$resp" | grep -qi captcha; then
+            ok "Sesion anonima ON y Turnstile ON"
+          elif echo "$resp" | grep -q '"id"'; then
+            bad "Turnstile esta APAGADO: se creo una sesion anonima sin captcha. Activalo en Authentication -> Bot & Abuse Protection"
+          elif echo "$resp" | grep -qi 'disabled\|not allowed\|anonymous'; then
+            bad "Los inicios de sesion anonimos estan APAGADOS. Activalos en Authentication -> Sign In / Providers"
+          else
+            bad "Respuesta inesperada del signup anonimo: $resp"
+          fi
+
+          echo
+          echo "== RESULTADO: $pass OK, $fail errores =="
+          [ "$fail" = 0 ]
