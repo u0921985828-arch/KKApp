@@ -140,6 +140,38 @@ button{font:inherit; color:inherit; border:0; background:none; cursor:pointer}
 .pin.open{background:var(--verde)} .pin.cust{background:var(--ambar)}
 .pin.shut{background:var(--rojo)}  .pin.mine{background:var(--porcelana)}
 .pin.sel{outline:3px solid var(--porcelana); outline-offset:2px}
+/* elegido por el moho: el nodo al que converge la red */
+.pin.win{
+  background:var(--verde); border-color:var(--porcelana);
+  box-shadow:0 0 0 4px rgba(47,168,107,.34), 0 3px 10px rgba(0,0,0,.45);
+}
+
+/* ── TARJETA DEL MOHO ───────────────────────────────────────── */
+.mohocard{
+  position:fixed; z-index:890; left:14px; right:14px;
+  top:calc(env(safe-area-inset-top) + 64px);
+  background:var(--porcelana); color:var(--tinta);
+  border-radius:var(--r); box-shadow:var(--sombra);
+  padding:10px 13px 12px;
+}
+.mohocard .hd{display:flex; justify-content:space-between; align-items:center; margin-bottom:9px}
+.mohocard .hd .lbl{margin:0}
+.mohocard .x{
+  font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase;
+  color:#8C8574; padding:3px 5px;
+}
+.mohowin{
+  display:flex; width:100%; align-items:center; gap:11px; text-align:left;
+  padding:9px 10px; border-radius:var(--r);
+  background:#E4F4EC; border:1.5px solid #7FC9A3;
+}
+.mohowin .bulb{
+  width:9px; height:9px; border-radius:50%; background:var(--verde); flex:none;
+  box-shadow:0 0 0 4px rgba(47,168,107,.22);
+}
+.mohowin b{display:block; font-family:var(--disp); font-weight:600; font-size:15.5px; line-height:1.15}
+.mohowin small{font-family:var(--mono); font-size:10px; letter-spacing:.06em; color:#1C6B44}
+.mohowin .go-in{font-family:var(--mono); font-size:15px; color:#1C6B44; margin-left:auto}
 
 .me{
   width:18px; height:18px; border-radius:50%;
@@ -356,6 +388,9 @@ textarea{min-height:78px; resize:vertical}
     </div>
   </div>
 </div>
+
+<!-- Resultado de la simulación del moho -->
+<div class="mohocard" id="mohoCard" style="display:none"></div>
 
 <button class="fab" id="btnAdd">＋ Añadir baño</button>
 
@@ -592,7 +627,7 @@ const Auth = {
    2. ESTADO
    ═══════════════════════════════════════════════════════════════ */
 const S = {
-  map: null, me: null, meMarker: null, layer: null, route: null,
+  map: null, me: null, meMarker: null, layer: null, route: null, mohoWin: null,
   osm: [], cloud: [], cloudRev: {}, list: [], sel: null,
   supp: new Set(store.get("cerca.supp", [])),
   filters: {}, fetching: false, lastFetch: 0, placing: false,
@@ -916,7 +951,7 @@ function paintMarkers() {
     const m = L.marker([t.lat, t.lon], {
       icon: L.divIcon({
         className: "", iconSize: [30, 30], iconAnchor: [15, 30],
-        html: `<div class="pin ${cls} ${S.sel === t.id ? "sel" : ""}"><b>${i + 1}</b></div>`
+        html: `<div class="pin ${cls} ${S.mohoWin === t.id ? "win" : ""} ${S.sel === t.id ? "sel" : ""}"><b>${i + 1}</b></div>`
       })
     });
     m.on("click", () => openDetail(t.id));
@@ -1093,6 +1128,37 @@ const Moho = {
     this.anim++;                       // invalida cualquier animación en vuelo
     if (this.layer) { S.map.removeLayer(this.layer); this.layer = null; }
     $("#btnMoho").setAttribute("aria-pressed", "false");
+    $("#mohoCard").style.display = "none";
+    if (S.mohoWin) { S.mohoWin = null; paintMarkers(); }
+  },
+
+  /** El veredicto merece quedarse en pantalla, no un toast de dos segundos. */
+  tarjeta(t, min, nTubos, nBanos) {
+    S.mohoWin = t.id;
+    const c = $("#mohoCard");
+    c.innerHTML = `
+      <div class="hd">
+        <span class="lbl">Red del moho</span>
+        <button class="x" id="mohoX">cerrar</button>
+      </div>
+      <button class="mohowin" id="mohoGo">
+        <span class="bulb"></span>
+        <span>
+          <b>${esc(t.name)}</b>
+          <small>${min != null ? min + " MIN POR LA RED" : "EL MÁS ACCESIBLE"} ·
+                 ${nTubos} CORREDORES · ${nBanos} BAÑOS</small>
+        </span>
+        <span class="go-in">▸</span>
+      </button>
+      <p class="note" style="margin-top:9px">
+        Cada tramo engorda con el flujo que lo cruza y los que no se usan se
+        atrofian, como el moho del metro de Tokio. Lo que queda son los
+        mejores corredores del barrio.
+      </p>`;
+    c.style.display = "block";
+    $("#mohoX").onclick  = () => this.clear();
+    $("#mohoGo").onclick = () => { c.style.display = "none"; openDetail(t.id); };
+    paintMarkers();
   },
 
   async run() {
@@ -1275,10 +1341,12 @@ out geom 900;`;
         if (ruta) {
           L.polyline(ruta.coords, { renderer: rend, color: "#2FA86B", weight: 6, opacity: .95, interactive: false })
             .addTo(this.layer);
-          toast("El moho eligió: " + win.t.name + " · " + minutos(ruta.len) + " min");
-        } else {
-          toast("El moho eligió: " + win.t.name);
         }
+        // Tubos que sobrevivieron: los que conservan cuerpo tras la atrofia.
+        let vivos = 0;
+        for (let k = 0; k < E.length; k++) if (E[k].D / maxD > 0.35) vivos++;
+        $("#searchBar").style.display = "none";
+        this.tarjeta(win.t, ruta ? minutos(ruta.len) : null, vivos, sinks.length);
       }
       latch("ok", "Listo");
     };
