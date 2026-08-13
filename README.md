@@ -74,8 +74,11 @@ registro de sentencias en Postgres, `log_statement` debe estar en `none` o
 esas coordenadas acabarán en los logs, que es justo lo que se evita.
 
 **Terceros que reciben datos** y deben aparecer en la política de privacidad:
-Supabase (Fráncfort, guarda IP en el registro de sesión), Overpass (recibe la
-zona consultada), OpenStreetMap (recibe el viewport de cada tesela).
+Supabase (guarda IP en el registro de sesión), Overpass (recibe la zona
+consultada), OpenStreetMap (recibe el viewport de cada tesela), Nominatim
+(recibe el texto del buscador de zonas), FOSSGIS routing (recibe origen y
+destino al dibujar la ruta a pie), Cloudflare Turnstile (verifica el captcha
+al abrir sesión).
 
 **Los baños base vienen de OSM bajo licencia ODbL.** Hoy sólo se consultan al
 vuelo, así que la cláusula share-alike no contamina nada. El día que se
