@@ -453,6 +453,20 @@ const store = (() => {
   };
 })();
 
+/* ── Conexión de fábrica ─────────────────────────────────────────
+   La app viene conectada: se abre y funciona, sin configurar nada.
+   Las tres claves son públicas por diseño y están pensadas para viajar
+   dentro del cliente. Lo que protege la base de datos no es esconderlas,
+   es el RLS: UPDATE y DELETE no tienen política, así que nadie puede
+   modificar ni borrar una fila. La clave que sí lo abre todo
+   (service_role) no está aquí ni puede estarlo.
+   Quien quiera apuntar a su propio servidor lo cambia en Ajustes.     */
+const FABRICA = {
+  url: "https://tbdxsratirztfjvjbewm.supabase.co",
+  key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiZHhzcmF0aXJ6dGZqdmpiZXdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1MDk5NjIsImV4cCI6MjEwMjA4NTk2Mn0.iTMAEPfj5q5qYPPBKom136DzYqZ8miVbvL-U6haQafA",
+  ts:  "0x4AAAAAAEOr7ijzrsv5uQLH"
+};
+
 const DB = {
   mine:    store.get("cerca.mine",    []),   // baños añadidos por el usuario
   reviews: store.get("cerca.reviews", {}),   // { toiletRef: [reseñas propias] }
@@ -460,7 +474,7 @@ const DB = {
   cloud:   store.get("cerca.cloud",   null), // último resultado del servidor
   outbox:  store.get("cerca.outbox",  []),   // envíos pendientes (modo offline)
   supp:    store.get("cerca.supp",    []),   // refs retiradas por la comunidad
-  cfg:     store.get("cerca.cfg",     { url: "", key: "" }),
+  cfg:     store.get("cerca.cfg",     FABRICA),
   save(k) { store.set("cerca." + k, DB[k]); }
 };
 
@@ -584,9 +598,13 @@ const Auth = {
    *  Por eso todas esperan a la misma promesa.                            */
   _vuelo: null,
 
-  async ensure() {
+  /** crear = true sólo cuando hay algo que publicar. Leer es anónimo: si se
+   *  acuñara identidad al abrir la app, el captcha saltaría nada más entrar
+   *  y cada visita dejaría un usuario huérfano en la base.                */
+  async ensure(crear) {
     if (!DB.cfg.url || !DB.cfg.key) return null;
     if (this.vivo()) return this.token;
+    if (!crear && !(this.ses && this.ses.refresh_token)) return null;
     if (this._vuelo) return this._vuelo;
 
     this._vuelo = (async () => {
@@ -598,6 +616,7 @@ const Auth = {
             return this.token;
           } catch (e) { fallo("auth.refresh", e); this.borra(); }
         }
+        if (!crear) return null;
         try {
           const body = {};
           const ct = await Captcha.token();       // null si no hay Site Key
@@ -794,7 +813,7 @@ const Cloud = {
    */
   async call(path, body, escribe) {
     let tok = null;
-    try { tok = await Auth.ensure(); }
+    try { tok = await Auth.ensure(escribe); }
     catch (e) { if (escribe) throw e; }
     if (escribe && !tok) throw new Error("Sin sesión para publicar.");
 
@@ -1867,22 +1886,30 @@ function openInfo() {
       ${Auth.uid ? '<span class="plate open">Sesión anónima activa</span>' : ""}
       ${DB.outbox.length ? `<span class="plate cust">${DB.outbox.length} sin enviar</span>` : ""}
     </div>
-    <input type="text" id="cfUrl" placeholder="https://xxxx.supabase.co" value="${esc(DB.cfg.url)}">
-    <div style="height:8px"></div>
-    <input type="text" id="cfKey" placeholder="Clave anon (publishable)" value="${esc(DB.cfg.key)}">
-    <div style="height:8px"></div>
-    <input type="text" id="cfTs" placeholder="Site Key de Turnstile (si el servidor exige captcha)" value="${esc(DB.cfg.ts || "")}">
-    <div style="height:10px"></div>
-    <button class="go alt wide" id="cfSave">Conectar</button>
-    <p class="note" style="margin-top:10px">
-      Con el servidor conectado, las altas y reseñas se comparten con el resto de usuarios.
-      Sin él, la app funciona igual pero los datos se quedan aquí.
+    <p class="note">
+      No hay nada que configurar: la app viene conectada. Al publicar por primera vez
+      se abre sola una <b>sesión anónima</b> —ni correo, ni nombre, ni contraseña—,
+      sólo un identificador firmado por el servidor para frenar el spam y para que
+      puedas retirar lo que publiques. Tu ubicación no se guarda nunca en ningún sitio.
     </p>
-    <p class="note" style="margin-top:8px">
-      Al conectar se abre una <b>sesión anónima</b>: ni correo, ni nombre, ni contraseña.
-      Sólo un identificador firmado por el servidor, para frenar el spam y para que puedas
-      retirar lo que publiques. Tu ubicación no se guarda nunca en ningún sitio.
-    </p>
+
+    <div style="height:14px"></div>
+    <button class="go ghost wide" id="cfToggle" style="font-size:13px">Usar otro servidor</button>
+    <div id="cfBox" style="display:none; margin-top:12px">
+      <input type="text" id="cfUrl" placeholder="https://xxxx.supabase.co" value="${esc(DB.cfg.url)}">
+      <div style="height:8px"></div>
+      <input type="text" id="cfKey" placeholder="Clave anon (publishable)" value="${esc(DB.cfg.key)}">
+      <div style="height:8px"></div>
+      <input type="text" id="cfTs" placeholder="Site Key de Turnstile (si exige captcha)" value="${esc(DB.cfg.ts || "")}">
+      <div style="height:10px"></div>
+      <button class="go alt wide" id="cfSave">Conectar</button>
+      <div style="height:8px"></div>
+      <button class="go ghost wide" id="cfReset" style="font-size:13px">Volver al servidor de CERCA</button>
+      <p class="note" style="margin-top:10px">
+        Sólo si montas tu propio Supabase con el SQL del repositorio. Dejando los
+        campos vacíos, la app funciona igual pero los datos se quedan en este móvil.
+      </p>
+    </div>
 
     <div class="hr"></div>
     <span class="lbl">Quién recibe qué</span>
@@ -1907,6 +1934,17 @@ function openInfo() {
 
     <div class="rowbtns"><button class="go ghost wide" id="ifBack">Volver</button></div>`;
 
+  $("#cfToggle").onclick = () => {
+    const b = $("#cfBox");
+    b.style.display = b.style.display === "none" ? "block" : "none";
+  };
+  $("#cfReset").onclick = () => {
+    DB.cfg = Object.assign({}, FABRICA); DB.save("cfg");
+    Auth.borra();
+    toast("Servidor de CERCA restablecido.");
+    openInfo();
+  };
+
   $("#cfSave").onclick = async () => {
     DB.cfg = { url: $("#cfUrl").value.trim(), key: $("#cfKey").value.trim(),
                ts: $("#cfTs").value.trim() };
@@ -1915,7 +1953,7 @@ function openInfo() {
     if (!Cloud.on) { toast("Desconectado. La app sigue funcionando en local."); return openInfo(); }
     latch("busy", "Probando");
     try {
-      try { await Auth.ensure(); }
+      try { await Auth.ensure(true); }
       catch (e) { toast(String(e.message || e).slice(0, 140)); }
       const c = S.me || S.map.getCenter();
       await Cloud.nearby(c.lat, c.lng != null ? c.lng : c.lon);

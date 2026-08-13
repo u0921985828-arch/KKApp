@@ -34,8 +34,11 @@ cerca/
      Key** se pega en el panel de Supabase y la **Site Key** en los Ajustes
      de la app, junto a la URL y la clave `anon`. Sin Site Key configurada,
      la app intenta abrir sesión sin captcha y el servidor la rechaza.
-3. **Conectar la app.** Abrir `www/index.html`, tocar el logo CERCA → Ajustes,
-   pegar Project URL y clave `anon`, Conectar.
+3. **Conectar la app.** Ya viene conectada: la constante `FABRICA` al principio
+   del `<script>` lleva la URL del proyecto, la clave `anon` y la Site Key de
+   Turnstile. Cámbialas por las tuyas y listo. Quien use la app no configura
+   nada; Ajustes → «Usar otro servidor» existe sólo para apuntar a otro
+   Supabase.
 
 La geolocalización sólo funciona en HTTPS o en `localhost`. Abrir el archivo
 con doble clic (`file://`) da mapa pero no ubicación.
@@ -75,10 +78,16 @@ regresiones en un archivo de este tamaño.
 
 ## Lo que hay que saber
 
-**La clave `anon` es pública por diseño.** Se extrae de cualquier APK en cinco
-minutos. Lo que protege la base de datos no es ocultarla, es el RLS: `UPDATE`
-y `DELETE` no tienen política, así que nadie puede modificar ni borrar una
-fila. Ni tú desde la app. Ocultar es cambiar un estado, siempre reversible.
+**La clave `anon` es pública por diseño.** Por eso está incrustada en
+`FABRICA` sin más ceremonia: se extrae de cualquier APK en cinco minutos, y
+ocultarla no protegería nada. Lo que protege la base de datos es el RLS:
+`UPDATE` y `DELETE` no tienen política, así que nadie puede modificar ni
+borrar una fila. Ni tú desde la app. Ocultar es cambiar un estado, siempre
+reversible.
+
+**Leer no abre sesión.** La identidad anónima se acuña la primera vez que
+alguien publica, no al abrir la app. Si no, cada visita dejaría un usuario
+huérfano en `auth.users` y el captcha saltaría nada más entrar.
 
 **La clave `service_role` sí lo salta todo.** Nunca en la app, nunca en el
 repositorio. Sólo en el panel de Supabase.
