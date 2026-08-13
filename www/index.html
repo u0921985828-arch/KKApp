@@ -325,6 +325,7 @@ textarea{min-height:78px; resize:vertical}
   <div class="latch" id="latch" data-state="busy" role="status" aria-live="polite">
     <span class="bolt"></span><span class="txt" id="latchTxt">Buscando</span>
   </div>
+  <button class="iconbtn" id="btnMoho" aria-label="Red de rutas tipo moho" aria-pressed="false">🍄</button>
   <button class="iconbtn" id="btnSearch" aria-label="Buscar otra zona">🔍</button>
   <button class="iconbtn" id="btnLocate" aria-label="Centrar en mi posición">◎</button>
 </header>
@@ -965,6 +966,7 @@ const ENDPOINTS = [
 
 async function fetchToilets(lat, lon) {
   if (S.fetching) return;
+  Moho.clear();                       // la red del moho pertenece a la zona anterior
   S.fetching = true; latch("busy", "Buscando");
   // El pestillo se libera SIEMPRE, pase lo que pase. Si se queda echado, la
   // app no vuelve a buscar en toda la sesión.
@@ -1046,6 +1048,253 @@ function maybeRefetch() {
   if (!DB.cache || dist(c.lat, c.lng, DB.cache.lat, DB.cache.lon) > RADIO * 0.6)
     fetchToilets(c.lat, c.lng);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   6b. MOHO · Physarum polycephalum sobre las calles reales
+   El modelo de Tero et al. (Science, 2010; el del metro de Tokio):
+   el plasmodio se extiende como malla y luego cada tubo engorda en
+   proporción al flujo que lo atraviesa mientras el resto se atrofia.
+   Aquí la malla inicial son las calles peatonales de OSM, la boca
+   eres tú y la comida son los baños. Los corredores que sobreviven
+   son las mejores rutas; el baño que más flujo recibe es la elección
+   del moho considerando la red entera, no la línea recta.
+   ═══════════════════════════════════════════════════════════════ */
+const Moho = {
+  on: false, layer: null, anim: 0,
+
+  toggle() {
+    if (this.on) { this.clear(); latch("ok", "Listo"); return; }
+    this.run();
+  },
+
+  clear() {
+    this.on = false;
+    this.anim++;                       // invalida cualquier animación en vuelo
+    if (this.layer) { S.map.removeLayer(this.layer); this.layer = null; }
+    $("#btnMoho").setAttribute("aria-pressed", "false");
+  },
+
+  async run() {
+    const o = refPoint();
+    const cand = S.list.filter(t => t.d <= 1400).slice(0, 8);
+    if (!cand.length) return toast("No hay baños a menos de 1,4 km para tender la red.");
+    this.on = true;
+    $("#btnMoho").setAttribute("aria-pressed", "true");
+    latch("busy", "Creciendo");
+    try {
+      const g = await this.grafo(o.lat, o.lon);
+      if (!g || g.edges.length < 8) throw new Error("red viaria insuficiente");
+      const src = this.snap(g, o.lat, o.lon, 300);
+      if (src < 0) throw new Error("origen lejos de las calles");
+      const sinks = [];
+      cand.forEach(t => {
+        const s = this.snap(g, t.lat, t.lon, 250);
+        if (s >= 0 && s !== src && !sinks.some(x => x.node === s)) sinks.push({ node: s, t });
+      });
+      if (!sinks.length) throw new Error("ningún baño alcanza la red");
+      this.simular(g, src, sinks);
+    } catch (e) {
+      fallo("moho", e);
+      toast("El moho no pudo extenderse aquí. Prueba en otra zona.");
+      this.clear(); latch("ok", "Listo");
+    }
+  },
+
+  /** Red peatonal de OSM alrededor del origen, colapsada a tramos entre cruces. */
+  async grafo(lat, lon) {
+    const q = `[out:json][timeout:25];
+(way["highway"~"^(footway|path|pedestrian|living_street|residential|service|steps|track|cycleway|unclassified|tertiary|secondary|primary)$"]["area"!="yes"](around:1100,${lat},${lon}););
+out geom 900;`;
+    for (const url of ENDPOINTS) {
+      try {
+        const r = await fetchT(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "data=" + encodeURIComponent(q)
+        }, 15000);
+        if (!r.ok) throw new Error(r.status);
+        const j = await r.json();
+        return this.montar(j.elements || []);
+      } catch (e) { fallo("moho.overpass:" + url, e); }
+    }
+    return null;
+  },
+
+  montar(ways) {
+    const idOf = new Map(), nodes = [], segs = [];
+    const nid = (la, lo) => {
+      const k = Math.round(la * 1e5) + "," + Math.round(lo * 1e5);
+      let i = idOf.get(k);
+      if (i == null) { i = nodes.length; nodes.push({ lat: la, lon: lo, deg: 0 }); idOf.set(k, i); }
+      return i;
+    };
+    ways.forEach(w => {
+      const gg = w.geometry;
+      if (!gg || gg.length < 2) return;
+      for (let i = 1; i < gg.length; i++) {
+        const a = nid(gg[i - 1].lat, gg[i - 1].lon), b = nid(gg[i].lat, gg[i].lon);
+        if (a === b) continue;
+        segs.push({ a, b, len: Math.max(2, dist(gg[i - 1].lat, gg[i - 1].lon, gg[i].lat, gg[i].lon)) });
+        nodes[a].deg++; nodes[b].deg++;
+      }
+    });
+    // Colapsar cadenas de paso (grado 2) a un solo tramo entre cruces:
+    // el solver trabaja sobre cruces y la geometría completa se conserva
+    // para dibujar.
+    const inc = nodes.map(() => []);
+    segs.forEach((s, i) => { inc[s.a].push(i); inc[s.b].push(i); });
+    const used = new Uint8Array(segs.length), edges = [];
+    const cruce = i => nodes[i].deg !== 2;
+    nodes.forEach((n, i) => {
+      if (!cruce(i)) return;
+      inc[i].forEach(si => {
+        if (used[si]) return;
+        let coords = [[nodes[i].lat, nodes[i].lon]], len = 0, cur = i, s = si;
+        for (;;) {
+          used[s] = 1;
+          const sg = segs[s];
+          const nxt = sg.a === cur ? sg.b : sg.a;
+          len += sg.len;
+          coords.push([nodes[nxt].lat, nodes[nxt].lon]);
+          if (cruce(nxt)) { edges.push({ u: i, v: nxt, len, coords }); break; }
+          const cont = inc[nxt].find(x => !used[x] && x !== s);
+          if (cont == null) { edges.push({ u: i, v: nxt, len, coords }); break; }
+          cur = nxt; s = cont;
+        }
+      });
+    });
+    const live = new Set();
+    edges.forEach(e => { live.add(e.u); live.add(e.v); });
+    return { nodes, edges, live };
+  },
+
+  /** Nodo de la red más cercano a un punto (solo nodos con tramos vivos). */
+  snap(g, lat, lon, max) {
+    let best = -1, bd = max;
+    g.live.forEach(i => {
+      const d = dist(lat, lon, g.nodes[i].lat, g.nodes[i].lon);
+      if (d < bd) { bd = d; best = i; }
+    });
+    return best;
+  },
+
+  /** El corazón: presiones por Gauss-Seidel, flujo por tubo, y
+   *  dD/dt = f(|Q|) − D. Tú inyectas flujo; todos los baños absorben. */
+  simular(g, src, sinks) {
+    const N = g.nodes.length, E = g.edges;
+    const adj = Array.from({ length: N }, () => []);
+    E.forEach(e => {
+      e.D = 0.5; e.nl = e.len / 120;   // longitud normalizada: mantiene los números en rango
+      adj[e.u].push({ e, o: e.v });
+      adj[e.v].push({ e, o: e.u });
+    });
+    const esSink = new Uint8Array(N);
+    sinks.forEach(s => esSink[s.node] = 1);
+
+    const rend = L.canvas({ padding: 0.3 });
+    this.layer = L.layerGroup().addTo(S.map);
+    E.forEach(e => {
+      e.poly = L.polyline(e.coords, {
+        renderer: rend, color: "#E8A33D", weight: 1, opacity: .2, interactive: false
+      }).addTo(this.layer);
+    });
+
+    const p = new Float64Array(N);
+    const mio = ++this.anim;
+    let it = 0;
+    const TOTAL = 80;
+
+    const paso = () => {
+      if (mio !== this.anim) return;                 // lo apagaron por el camino
+      // presiones (arranque templado: p persiste entre iteraciones)
+      for (let s = 0; s < 20; s++) {
+        for (let i = 0; i < N; i++) {
+          if (esSink[i]) { p[i] = 0; continue; }
+          const ai = adj[i];
+          if (!ai.length) continue;
+          let gs = 0, sum = 0;
+          for (let k = 0; k < ai.length; k++) {
+            const c = ai[k].e.D / ai[k].e.nl;
+            gs += c; sum += c * p[ai[k].o];
+          }
+          if (gs > 0) p[i] = (sum + (i === src ? 2 : 0)) / gs;
+        }
+      }
+      // engorde y atrofia
+      let maxD = 0.0001;
+      for (let k = 0; k < E.length; k++) {
+        const e = E[k];
+        const q = Math.abs(e.D / e.nl * (p[e.u] - p[e.v]));
+        const f = Math.pow(q, 1.5);
+        e.D += 0.3 * (f / (1 + f) - e.D);
+        if (e.D > maxD) maxD = e.D;
+      }
+      // pintar cada dos pasos: la red va emergiendo
+      if (it % 2 === 0 || it === TOTAL - 1) {
+        for (let k = 0; k < E.length; k++) {
+          const e = E[k], r = e.D / maxD;
+          // La malla explorada queda como rastro tenue; los tubos vivos, gordos.
+          e.poly.setStyle({
+            weight: 1.2 + 5 * r,
+            opacity: Math.max(0.3, Math.min(0.92, 0.1 + r))
+          });
+        }
+      }
+      if (++it < TOTAL) { requestAnimationFrame(paso); return; }
+
+      // El moho ya decidió: el baño con más flujo entrante gana.
+      let win = null, wf = 0;
+      sinks.forEach(s => {
+        let fin = 0;
+        adj[s.node].forEach(a => { fin += a.e.D / a.e.nl * Math.max(0, p[a.o]); });
+        if (fin > wf) { wf = fin; win = s; }
+      });
+      if (win) {
+        const ruta = this.camino(g, adj, src, win.node);
+        if (ruta) {
+          L.polyline(ruta.coords, { renderer: rend, color: "#2FA86B", weight: 6, opacity: .95, interactive: false })
+            .addTo(this.layer);
+          toast("El moho eligió: " + win.t.name + " · " + minutos(ruta.len) + " min");
+        } else {
+          toast("El moho eligió: " + win.t.name);
+        }
+      }
+      latch("ok", "Listo");
+    };
+    requestAnimationFrame(paso);
+  },
+
+  /** Camino más barato según los tubos que sobrevivieron (coste = m / D). */
+  camino(g, adj, src, dst) {
+    const N = g.nodes.length;
+    const d = new Float64Array(N).fill(Infinity), prev = new Array(N).fill(null), fijo = new Uint8Array(N);
+    d[src] = 0;
+    for (;;) {
+      let u = -1, bd = Infinity;
+      for (let i = 0; i < N; i++) if (!fijo[i] && d[i] < bd) { bd = d[i]; u = i; }
+      if (u < 0 || u === dst) break;
+      fijo[u] = 1;
+      adj[u].forEach(a => {
+        const w = a.e.len / (a.e.D + 0.01);
+        if (d[u] + w < d[a.o]) { d[a.o] = d[u] + w; prev[a.o] = { n: u, e: a.e }; }
+      });
+    }
+    if (!prev[dst] && dst !== src) return null;
+    const coords = []; let len = 0, cur = dst;
+    while (cur !== src) {
+      const pr = prev[cur]; if (!pr) return null;
+      const cs = pr.e.coords.slice();
+      // orientar el tramo hacia atrás (de cur a pr.n)
+      const c0 = cs[0];
+      if (Math.round(c0[0] * 1e5) === Math.round(g.nodes[cur].lat * 1e5) &&
+          Math.round(c0[1] * 1e5) === Math.round(g.nodes[cur].lon * 1e5)) coords.push(...cs);
+      else coords.push(...cs.reverse());
+      len += pr.e.len; cur = pr.n;
+    }
+    coords.reverse();
+    return { coords, len };
+  }
+};
 
 /* ═══════════════════════════════════════════════════════════════
    7. RENDER · lista
@@ -1678,6 +1927,7 @@ function initUI() {
   $("#searchQ").addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); buscarZona(); }
   });
+  $("#btnMoho").onclick = () => Moho.toggle();
   // pulsación larga en el logo → ajustes
   let hold;
   $(".brand").addEventListener("pointerdown", () => hold = setTimeout(openInfo, 550));

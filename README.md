@@ -48,6 +48,22 @@ con doble clic (`file://`) da mapa pero no ubicación.
   propio y cuatro secretos. **Si pierdes el keystore no podrás volver a
   publicar bajo el mismo `appId`. Nunca. Haz copia fuera de GitHub.**
 
+## El modo moho 🍄
+
+El botón 🍄 ejecuta sobre las calles reales el modelo de *Physarum
+polycephalum* de Tero et al. (Science, 2010) — el del moho que reprodujo el
+metro de Tokio. La red peatonal de OSM alrededor tuyo hace de malla inicial
+del plasmodio, tú eres la boca y los baños cercanos la comida: cada tubo
+engorda en proporción al flujo que lo atraviesa (`dD/dt = f(|Q|) − D`, con
+las presiones resueltas por Kirchhoff en cada paso) y el resto se atrofia.
+Los corredores que sobreviven son las mejores rutas contando la red entera,
+y el baño que más flujo recibe es la elección del moho.
+
+Para UNA ruta a un baño concreto, la ruta clásica (botón del detalle) ya es
+óptima y más rápida de calcular. El moho aporta otra cosa: mira varios
+baños a la vez y muestra qué corredores del barrio valen más, con rutas
+alternativas si el primero falla.
+
 ## Antes de tocar el código
 
 ```bash
