@@ -11,11 +11,12 @@
      exfiltrarse un token, que es lo que importa. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src  'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
+  script-src  'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://challenges.cloudflare.com;
   style-src   'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com;
   font-src    'self' data: https://fonts.gstatic.com;
   img-src     'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://unpkg.com https://cdnjs.cloudflare.com;
   connect-src 'self' https://*.supabase.co https://overpass-api.de https://overpass.kumi.systems;
+  frame-src   https://challenges.cloudflare.com;
   form-action 'none';
   base-uri    'none';
   object-src  'none'">
@@ -360,6 +361,10 @@ textarea{min-height:78px; resize:vertical}
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<!-- Turnstile: aparece solo si el servidor exige captcha al abrir sesión -->
+<div id="captchaBox" style="display:none; position:fixed; inset:0; z-index:1100;
+     place-items:center; background:rgba(9,28,56,.78)"></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 "use strict";
@@ -425,6 +430,52 @@ async function fetchT(url, opts, ms) {
   finally { clearTimeout(id); }
 }
 
+/* ── Turnstile (Cloudflare) ──────────────────────────────────────
+   Solo entra en juego si hay Site Key en Ajustes. El script se carga
+   bajo demanda; en modo Managed casi siempre resuelve solo, sin que
+   el usuario vea nada más que un destello del recuadro.             */
+const Captcha = {
+  _script: null,
+
+  _load() {
+    if (window.turnstile) return Promise.resolve(window.turnstile);
+    if (!this._script) {
+      this._script = new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        s.onload = () => res(window.turnstile);
+        s.onerror = () => { this._script = null; rej(new Error("No se pudo cargar el captcha.")); };
+        document.head.appendChild(s);
+      });
+    }
+    return this._script;
+  },
+
+  async token() {
+    if (!DB.cfg.ts) return null;
+    const ts = await this._load();
+    const box = document.getElementById("captchaBox");
+    box.innerHTML = "<div></div>";
+    box.style.display = "grid";
+    return new Promise((res, rej) => {
+      let wid = null;
+      const done = (v, err) => {
+        box.style.display = "none"; box.innerHTML = "";
+        if (wid != null) { try { ts.remove(wid); } catch (e) {} }
+        err ? rej(new Error(err)) : res(v);
+      };
+      try {
+        wid = ts.render(box.firstChild, {
+          sitekey: DB.cfg.ts,
+          callback: v => done(v),
+          "error-callback": () => done(null, "El captcha no se pudo verificar."),
+          "timeout-callback": () => done(null, "El captcha caducó. Prueba otra vez.")
+        });
+      } catch (e) { done(null, "El captcha falló al arrancar."); }
+    });
+  }
+};
+
 /* ── Sesión anónima (Supabase Auth) ──────────────────────────────
    No pide correo, ni nombre, ni nada. El servidor entrega una identidad
    firmada que el móvil no puede falsificar. Es lo que permite limitar
@@ -480,11 +531,20 @@ const Auth = {
           } catch (e) { fallo("auth.refresh", e); this.borra(); }
         }
         try {
-          this.guarda(await this.post("/auth/v1/signup", {}));
+          const body = {};
+          const ct = await Captcha.token();       // null si no hay Site Key
+          if (ct) body.gotrue_meta_security = { captcha_token: ct };
+          this.guarda(await this.post("/auth/v1/signup", body));
           return this.token;
         } catch (e) {
           fallo("auth.signup", e);
           this.borra();
+          const m = String((e && e.message) || "");
+          if (/captcha/i.test(m)) {
+            throw new Error(DB.cfg.ts
+              ? m
+              : "El servidor exige captcha. Pega la Site Key de Turnstile en Ajustes.");
+          }
           throw new Error("Sin sesión. Activa el inicio de sesión anónimo en " +
                           "Supabase → Authentication → Sign In / Providers → Anonymous.");
         }
@@ -1414,6 +1474,8 @@ function openInfo() {
     <input type="text" id="cfUrl" placeholder="https://xxxx.supabase.co" value="${esc(DB.cfg.url)}">
     <div style="height:8px"></div>
     <input type="text" id="cfKey" placeholder="Clave anon (publishable)" value="${esc(DB.cfg.key)}">
+    <div style="height:8px"></div>
+    <input type="text" id="cfTs" placeholder="Site Key de Turnstile (si el servidor exige captcha)" value="${esc(DB.cfg.ts || "")}">
     <div style="height:10px"></div>
     <button class="go alt wide" id="cfSave">Conectar</button>
     <p class="note" style="margin-top:10px">
@@ -1448,7 +1510,8 @@ function openInfo() {
     <div class="rowbtns"><button class="go ghost wide" id="ifBack">Volver</button></div>`;
 
   $("#cfSave").onclick = async () => {
-    DB.cfg = { url: $("#cfUrl").value.trim(), key: $("#cfKey").value.trim() };
+    DB.cfg = { url: $("#cfUrl").value.trim(), key: $("#cfKey").value.trim(),
+               ts: $("#cfTs").value.trim() };
     DB.save("cfg");
     Auth.borra();                       // el servidor pudo cambiar: sesión nueva
     if (!Cloud.on) { toast("Desconectado. La app sigue funcionando en local."); return openInfo(); }

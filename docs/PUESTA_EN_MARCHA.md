@@ -215,18 +215,30 @@ El orden de ejecución del SQL, sin saltarse ninguno:
 
 Los tres son idempotentes: se pueden repetir sin romper nada.
 
-**Un ajuste en el panel que el SQL no puede hacer por ti:**
+**Dos ajustes en el panel que el SQL no puede hacer por ti:**
 
 - Authentication → Sign In / Providers → **Anonymous sign-ins: ON**
+- Authentication → **Bot & Abuse Protection → Cloudflare Turnstile: ON**
 
-**Cloudflare Turnstile: todavía NO.** La app abre sesión llamando a
-`/auth/v1/signup` sin token de captcha; si activas Turnstile en el panel,
-Supabase rechaza ese signup y la app entera se queda sin poder publicar.
-Sigue siendo la protección correcta —sin ella, acuñar identidades anónimas
-es gratis y el auto-ocultado por reportes se convierte en una palanca de
-censura— pero exige primero implementar el widget y el
-`gotrue_meta_security.captcha_token` en `www/index.html`. Hasta entonces lo
-mitiga el sistema de pesos de la migración 03.
+El segundo no es opcional. Sin él, acuñar identidades anónimas es gratis, y
+el auto-ocultado por reportes se convierte en una palanca de censura: tres
+sesiones desde un mismo móvil retiran el baño de la competencia. El sistema
+de pesos de la migración 03 lo mitiga, pero Turnstile es lo que sube el
+coste de entrada.
+
+Cómo se activa, en orden:
+
+1. En Cloudflare (cuenta gratuita) → Turnstile → **Add widget**. Hostname:
+   el dominio donde vive la app. Modo: Managed. Pre-clearance: apagado (solo
+   sirve para webs proxiadas por Cloudflare).
+2. La **Secret Key** del widget → Supabase → Authentication → Bot & Abuse
+   Protection → Enable Captcha protection → Turnstile → pegar → Save.
+3. La **Site Key** del widget → Ajustes de la app (tercer campo, junto a la
+   URL y la clave `anon`) → Conectar.
+
+La app carga el script de Turnstile bajo demanda y manda el token en
+`gotrue_meta_security.captcha_token` al abrir sesión. En modo Managed el
+captcha casi siempre resuelve solo, sin fricción visible.
 
 **Y uno en Postgres, si activas registro de sentencias:** `log_statement`
 debe quedar en `none`. La función `add_review` recibe las coordenadas del
