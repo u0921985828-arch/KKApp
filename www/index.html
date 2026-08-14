@@ -120,7 +120,10 @@ button{font:inherit; color:inherit; border:0; background:none; cursor:pointer}
 
 /* ── MAPA ───────────────────────────────────────────────────── */
 #map{position:fixed; inset:0; z-index:1; background:var(--cobalto-bajo)}
-.leaflet-tile{filter:saturate(.62) contrast(.94) brightness(.98)}
+/* Las teselas ya llegan teñidas por el algoritmo (véase TeselaCERCA);
+   este filtro es sólo para el modo «mapa original» de Ajustes. */
+.leaflet-tile{filter:none}
+body.mapa-crudo .leaflet-tile{filter:saturate(.62) contrast(.94) brightness(.98)}
 .leaflet-control-attribution{
   font-family:var(--mono); font-size:9px !important;
   background:rgba(242,239,231,.86) !important; color:#333 !important;
@@ -474,6 +477,7 @@ const DB = {
   cloud:   store.get("cerca.cloud",   null), // último resultado del servidor
   outbox:  store.get("cerca.outbox",  []),   // envíos pendientes (modo offline)
   supp:    store.get("cerca.supp",    []),   // refs retiradas por la comunidad
+  crudo:   store.get("cerca.crudo",   false),// true = mapa de OSM sin teñir
   cfg:     store.get("cerca.cfg",     FABRICA),
   save(k) { store.set("cerca." + k, DB[k]); }
 };
@@ -646,7 +650,7 @@ const Auth = {
    2. ESTADO
    ═══════════════════════════════════════════════════════════════ */
 const S = {
-  map: null, me: null, meMarker: null, layer: null, route: null, mohoWin: null,
+  map: null, me: null, meMarker: null, layer: null, route: null, mohoWin: null, tiles: null,
   osm: [], cloud: [], cloudRev: {}, list: [], sel: null,
   supp: new Set(store.get("cerca.supp", [])),
   filters: {}, fetching: false, lastFetch: 0, placing: false,
@@ -953,12 +957,98 @@ const Cloud = {
 /* ═══════════════════════════════════════════════════════════════
    5. MAPA
    ═══════════════════════════════════════════════════════════════ */
+/* ── El mapa, repintado con la paleta de la app ──────────────────
+   Las teselas de OSM llegan en su estilo estándar (suelo beis, asfalto
+   blanco, agua azul claro) y desentonan con todo lo demás. Aquí se
+   reescriben píxel a píxel al llegar, sin servidor de teselas propio.
+
+   Los filtros CSS no sirven para esto: entre el suelo (#F2EFE9) y el
+   asfalto (#FFFFFF) hay trece niveles de luz, así que cualquier ajuste
+   de contraste o los funde en el mismo tono o los hunde juntos en negro.
+   Un duotono de verdad necesita una rampa, que es lo que hay debajo:
+   la luminancia entra por un lado y sale convertida en paleta.
+
+   La rampa no es monótona a propósito. La única tinta oscura de OSM son
+   las etiquetas, así que el tramo bajo sube a porcelana y los nombres de
+   calle siguen leyéndose sobre el cobalto.                             */
+const RAMPA = (() => {
+  const R = new Uint8Array(768);
+  const P = { pozo: [7, 22, 48], cobalto: [14, 42, 82], alto: [20, 58, 110], porcelana: [242, 239, 231] };
+  const mez = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  for (let i = 0; i < 256; i++) {
+    let c;
+    if (i < 118)      c = mez(P.porcelana, P.alto, i / 118);            // tinta de etiquetas → clara
+    else if (i < 208) c = mez(P.alto, P.pozo, (i - 118) / 90);          // sombras → pozo
+    else if (i < 240) c = mez(P.pozo, P.cobalto, (i - 208) / 32);       // agua, parque, suelo
+    else              c = mez(P.cobalto, P.porcelana, Math.pow((i - 240) / 15, 0.78));  // asfalto
+    R[i * 3] = c[0] | 0; R[i * 3 + 1] = c[1] | 0; R[i * 3 + 2] = c[2] | 0;
+  }
+  return R;
+})();
+
+function teñir(d) {
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    let l = (r * 77 + g * 150 + b * 29) >> 8;
+    // Las vías principales de OSM son amarillas o naranjas: brillantes pero
+    // menos luminosas que el suelo. Sin este empujón se hundirían por debajo
+    // de él y el mapa perdería la jerarquía viaria.
+    if (l > 195 && r > g && r - b > 45) l = Math.min(255, l + 32);
+    const k = l * 3;
+    // El matiz original sobrevive como un empujón suave: el agua se sigue
+    // leyendo azul y el verde verde, aunque todo viva dentro de la paleta.
+    const cr = (r - b) >> 3, cg = (g - b) >> 3;
+    d[i]     = Math.max(0, Math.min(255, RAMPA[k]     + cr));
+    d[i + 1] = Math.max(0, Math.min(255, RAMPA[k + 1] + cg));
+    d[i + 2] = Math.max(0, Math.min(255, RAMPA[k + 2] - ((cr + cg) >> 1)));
+  }
+}
+
+const TeselaCERCA = L.TileLayer.extend({
+  createTile(coords, done) {
+    const tile = document.createElement("canvas");
+    tile.width = tile.height = 256;
+    const url = this.getTileUrl(coords);
+    // Sin CORS no se puede leer el lienzo; entonces se pinta la tesela tal
+    // cual y el mapa sigue funcionando, sólo que sin teñir.
+    const crudo = () => {
+      const p = new Image();
+      p.onload  = () => { tile.getContext("2d").drawImage(p, 0, 0); done(null, tile); };
+      p.onerror = e  => done(e, tile);
+      p.src = url;
+    };
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const ctx = tile.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      try {
+        const d = ctx.getImageData(0, 0, 256, 256);
+        teñir(d.data);
+        ctx.putImageData(d, 0, 0);
+      } catch (e) { fallo("tesela.teñir", e); }
+      done(null, tile);
+    };
+    img.onerror = crudo;
+    img.src = url;
+    return tile;
+  }
+});
+
+function capaMapa() {
+  const opts = {
+    maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  };
+  const url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  return DB.crudo ? L.tileLayer(url, opts) : new TeselaCERCA(url, opts);
+}
+
 function initMap() {
   S.map = L.map("map", { zoomControl: false, attributionControl: true })
            .setView([43.263, -2.935], 15);   // Bilbao por defecto
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(S.map);
+  document.body.classList.toggle("mapa-crudo", !!DB.crudo);
+  S.tiles = capaMapa().addTo(S.map);
   S.layer = L.layerGroup().addTo(S.map);
   S.map.on("dragend", () => { if (!S.placing) maybeRefetch(); });
 }
@@ -1880,6 +1970,18 @@ function openInfo() {
     </div>
 
     <div class="hr"></div>
+    <span class="lbl">Mapa</span>
+    <div class="grid2">
+      <button class="tog" data-mapa="cerca" aria-pressed="${!DB.crudo}">Paleta CERCA</button>
+      <button class="tog" data-mapa="osm"   aria-pressed="${!!DB.crudo}">Original de OSM</button>
+    </div>
+    <p class="note" style="margin-top:8px">
+      Las teselas llegan en el estilo estándar de OpenStreetMap y se reescriben
+      píxel a píxel a la paleta de la app según se descargan. No hay servidor de
+      teselas propio: el mapa se tiñe en tu móvil.
+    </p>
+
+    <div class="hr"></div>
     <span class="lbl">Servidor</span>
     <div class="meta" style="margin-bottom:10px">
       <span class="plate ${Cloud.on ? "open" : "cust"}">${Cloud.on ? "Conectado" : "Solo este móvil"}</span>
@@ -1933,6 +2035,17 @@ function openInfo() {
     ${store.native ? "" : '<p class="note" style="margin-top:16px;color:#8F2A20"><b>Aviso:</b> el almacenamiento del navegador está bloqueado aquí, así que los datos se pierden al recargar. En un navegador normal o en la app compilada funciona bien.</p>'}
 
     <div class="rowbtns"><button class="go ghost wide" id="ifBack">Volver</button></div>`;
+
+  $("#paneInfo").querySelectorAll("[data-mapa]").forEach(b => b.onclick = () => {
+    const crudo = b.dataset.mapa === "osm";
+    if (crudo === !!DB.crudo) return;
+    DB.crudo = crudo; store.set("cerca.crudo", crudo);
+    document.body.classList.toggle("mapa-crudo", crudo);
+    if (S.tiles) S.map.removeLayer(S.tiles);
+    S.tiles = capaMapa().addTo(S.map);
+    S.tiles.bringToBack();
+    openInfo();
+  });
 
   $("#cfToggle").onclick = () => {
     const b = $("#cfBox");

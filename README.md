@@ -51,6 +51,30 @@ con doble clic (`file://`) da mapa pero no ubicación.
   propio y cuatro secretos. **Si pierdes el keystore no podrás volver a
   publicar bajo el mismo `appId`. Nunca. Haz copia fuera de GitHub.**
 
+## El mapa se tiñe en el móvil
+
+Las teselas llegan de OSM en su estilo estándar y se reescriben píxel a píxel
+al descargarse (`TeselaCERCA`), sin servidor de teselas propio.
+
+No se hace con filtros CSS porque no puede hacerse: entre el suelo (`#F2EFE9`)
+y el asfalto (`#FFFFFF`) hay trece niveles de luz, así que cualquier ajuste de
+contraste o los funde en el mismo tono o los hunde juntos en negro. Lo que hay
+es una rampa de 256 entradas: entra luminancia, sale paleta. Detalles que
+importan y no son obvios:
+
+- **La rampa no es monótona.** La única tinta oscura de OSM son las etiquetas,
+  así que el tramo bajo sube a porcelana y los nombres de calle se siguen
+  leyendo sobre el cobalto.
+- **Las vías principales son amarillas**, más brillantes que el suelo pero
+  menos luminosas. Sin un empujón explícito quedarían por debajo de él y el
+  mapa perdería la jerarquía viaria.
+- **El matiz original sobrevive** como una desviación suave sobre la rampa: el
+  agua se sigue leyendo azul y el verde verde, dentro de la paleta.
+- **Si el servidor de teselas no manda CORS**, el lienzo no se puede leer y la
+  tesela se pinta tal cual: el mapa nunca se queda en blanco.
+
+Ajustes → Mapa permite volver al estilo original de OSM.
+
 ## El modo moho 🍄
 
 El botón 🍄 ejecuta sobre las calles reales el modelo de *Physarum
