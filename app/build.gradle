@@ -26,6 +26,12 @@ android {
 }
 
 dependencies {
+    // AndroidX arrastra kotlin-stdlib 1.8.22 por un lado y los viejos
+    // kotlin-stdlib-jdk7/jdk8 1.6.21 por otro, y sus clases chocan en
+    // `checkDebugDuplicateClasses`. El BOM alinea las tres a la misma versión:
+    // a partir de 1.8 los jdk7/jdk8 son cascarones vacíos y el choque cesa.
+    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
+
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.webkit:webkit:1.11.0'
 }
