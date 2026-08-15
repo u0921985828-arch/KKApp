@@ -1,0 +1,44 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.patwalink.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.patwalink.app"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug   // sustituir por firma propia
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.11.0'
+}
+
+// Una sola fuente de verdad para la app web: el HTML de la raíz se copia a
+// assets antes de compilar. Así el APK nunca empaqueta una copia divergente,
+// ni en local ni en CI.
+def fuenteWeb = rootProject.file('patwalink.html')
+
+def sincronizarWeb = tasks.register('sincronizarWeb', Copy) {
+    onlyIf { fuenteWeb.exists() }
+    from(fuenteWeb) { rename { 'index.html' } }
+    into layout.projectDirectory.dir('src/main/assets')
+}
+
+tasks.named('preBuild') { dependsOn sincronizarWeb }

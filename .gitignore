@@ -1,0 +1,15 @@
+.gradle/
+build/
+app/build/
+local.properties
+*.jks
+*.keystore
+captures/
+.idea/
+*.iml
+__pycache__/
+corpus.jsonl
+destilado.js
+
+# copia generada por la tarea `sincronizarWeb`: la fuente es patwalink.html
+app/src/main/assets/index.html

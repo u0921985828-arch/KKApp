@@ -1,0 +1,106 @@
+name: Compilar APK
+
+on:
+  push:
+    branches:
+      - main
+      - claude/compilar-apk-rzozd8
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Compilar variante de release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar SDK de Android
+        uses: android-actions/setup-android@v3
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # El HTML vive en la raíz del repositorio. La tarea `sincronizarWeb` de
+      # app/build.gradle lo copia a assets en cada compilación, así que aquí
+      # sólo se comprueba que la fuente existe y qué tamaño tiene.
+      - name: Comprobar la app web
+        run: |
+          test -f patwalink.html
+          echo "Tamaño: $(du -h patwalink.html | cut -f1)"
+
+      - name: Comprobar sintaxis del motor
+        run: |
+          node -e "
+          const fs=require('fs');
+          const s=fs.readFileSync('patwalink.html','utf8');
+          const js=s.split('<script>')[1].split('</script>')[0];
+          fs.writeFileSync('/tmp/motor.js', js);
+          "
+          node --check /tmp/motor.js
+          echo "Sintaxis correcta"
+
+      - name: Batería diagnóstica
+        run: node herramientas/runsuite.js
+
+      - name: Compilar debug
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Compilar release
+        if: inputs.release
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "Sin keystore configurado: se omite la variante de release."
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > app/firma.jks
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$PWD/app/firma.jks \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASS" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASS"
+          rm -f app/firma.jks
+
+      - name: Nombrar el APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk PatwaLink.apk
+
+      - name: Publicar artefactos
+        uses: actions/upload-artifact@v4
+        with:
+          name: patwalink-apk
+          path: |
+            PatwaLink.apk
+            app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      # Enlace de descarga directa, para instalar desde el móvil sin pasar por
+      # la interfaz de Actions (que exige sesión iniciada).
+      - name: Adjuntar a la release «apk»
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk
+          name: PatwaLink APK (depuración)
+          body: |
+            APK de depuración compilado desde `${{ github.sha }}`.
+            Firmado con la clave de depuración de Android: sirve para instalar
+            a mano, no para publicar en Play Store.
+          files: PatwaLink.apk
+          make_latest: false
