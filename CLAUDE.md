@@ -81,6 +81,24 @@ El 100% mide coincidencia con el criterio de quien escribió la batería sobre 7
 
 ---
 
+## Rendimiento
+
+`normalize` y `phoneticKey` están **memorizadas**. No es un adorno: salían juntas
+en el 74% del perfil de CPU porque la derivación de una palabra desconocida las
+llama cientos de veces sobre las mismas formas. Sin caché, el p95 era 33 veces
+peor y el salto entre «la palabra está» y «hay que derivarla» era de 226×, justo
+en el momento en que el usuario escribe algo que el motor no conoce.
+
+Si se toca `_phoneticKey`, la caché no se entera: son funciones puras y la clave
+es la cadena de entrada, así que cualquier cambio en la lógica exige vaciar
+`_memoFon` o reiniciar. En la app no importa —se carga entera cada vez— pero al
+probar en Node sí.
+
+`node herramientas/estudio_uso.js` mide todo esto; `--motor=otro.html` compara
+dos versiones contra el mismo corpus y la misma semilla.
+
+---
+
 ## Trampas conocidas
 
 - **Homógrafos español verbo/sustantivo.** `casa` es sustantivo y forma de *casar*; `una` es determinante y subjuntivo de *unir*. La regla: tras determinante o preposición gana la lectura nominal. Si se toca el orden de las ramas del bucle, esto se rompe.

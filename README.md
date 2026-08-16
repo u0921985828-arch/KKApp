@@ -19,10 +19,13 @@ CLAUDE.md                   contexto para trabajar con Claude Code
 herramientas/
   runsuite.js               ejecuta la batería diagnóstica
   suite.js                  70 casos por fenómeno gramatical
+  estudio_uso.js            simulador de carga y cobertura
+  corpus_uso.js             frases del simulador, ajenas al léxico
   destilar.py               genera corpus y destila léxico con un LLM
 estudios/
   estudio_motor_patwalink.md      auditoría del motor y hoja de ruta
   estudio_cobertura_lexica.md     cobertura frente al español completo
+  estudio_uso_simulado.md         carga y cobertura con 10.000 usuarios
 pwa/                        variante instalable desde el navegador
 app/                        proyecto Android (WebView sin permisos)
 patwalink_schema.sql        esquema Supabase para el glosario colaborativo
@@ -35,6 +38,19 @@ node herramientas/runsuite.js
 ```
 
 Sale con código 1 si cae un solo caso. Ejecutarlo antes de cada commit.
+
+## Estudio de uso
+
+```bash
+node herramientas/estudio_uso.js --usuarios=10000 --horas=8
+```
+
+Somete el motor a la carga de 10.000 usuarios sintéticos y mide rendimiento,
+cobertura léxica y qué palabras faltan. Reproducible: la semilla es fija.
+`--motor=otro.html` compara dos versiones contra el mismo corpus.
+
+Mide carga y cobertura; **no** mide si la traducción es buena. Resultados en
+`estudios/estudio_uso_simulado.md`.
 
 ## Compilar el APK
 

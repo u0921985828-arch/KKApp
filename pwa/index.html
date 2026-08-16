@@ -682,14 +682,42 @@ body{
    y patwa_phonetic_key() en PostgreSQL. Si cambias una, cambia
    la otra o la búsqueda del cliente y la del servidor divergen.
    ============================================================ */
+/* `normalize` y `phoneticKey` son funciones puras de una cadena, y salen
+   juntas en el 74% del perfil de CPU: derivar una palabra desconocida las
+   llama cientos de veces sobre el mismo puñado de formas. Memorizarlas es
+   el cambio de mayor efecto por línea escrita en todo el motor.
+   La caché se vacía entera al llegar al tope en vez de desalojar entrada
+   por entrada: el vocabulario de una sesión no se acerca a esa cifra, así
+   que en la práctica no se vacía nunca y la memoria queda acotada igual. */
+const MEMO_TOPE = 20000;
+const _memoNorm = new Map();
+const _memoFon  = new Map();
+
 function normalize(txt){
-  return (txt||'')
+  const k = txt || '';
+  const v = _memoNorm.get(k);
+  if(v !== undefined) return v;
+  const r = k
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/['`´’\-.,!?¡¿"()]/g,'')
     .replace(/\s+/g,'');
+  if(_memoNorm.size >= MEMO_TOPE) _memoNorm.clear();
+  _memoNorm.set(k, r);
+  return r;
 }
+
 function phoneticKey(txt){
+  const k = txt || '';
+  const v = _memoFon.get(k);
+  if(v !== undefined) return v;
+  const r = _phoneticKey(k);
+  if(_memoFon.size >= MEMO_TOPE) _memoFon.clear();
+  _memoFon.set(k, r);
+  return r;
+}
+
+function _phoneticKey(txt){
   let s = normalize(txt);
   s = s.replace(/th/g,'d');
   s = s.replace(/^h/,'');
