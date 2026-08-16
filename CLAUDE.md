@@ -155,6 +155,10 @@ Cartel serigrafiado jamaicano con acabado de principios de los 2000. No es decor
 
 **No usar el tricolor rojo-oro-verde.** Es el recurso obvio y convierte cualquier cosa en souvenir.
 
+**El aviso pesa lo que pesa el hueco.** `.alerta` tiene una variante `--leve`: un solo término sin traducir con el resto de la frase cubierta es una nota al margen —filete de tinta y nada más—, y el relleno rosa con contorno entero se reserva para cuando falta una parte apreciable. Se escribe con la clase doblada (`.alerta.alerta--leve`) para ganarle al degradado sin depender del orden en la hoja.
+
+**Los tokens de la hoja de análisis vienen de una paleta anterior.** `--line`, `--abyss`, `--land`, `--coral`, `--cyan`, `--shelf` y `--hills` son nombres de carta náutica que sobrevivieron al repintado; estuvieron sin definir y ese panel se dibujaba sin color, porque un `var()` sin definir no aplica la declaración y el elemento hereda. Ahora están enganchados a la paleta viva en `:root`. Si se añade un color, engancharlo ahí y no meter un hexadecimal suelto.
+
 **No hay modo oscuro, y es una decisión.** La hoja de estilo no declara `prefers-color-scheme` en ninguna parte: el diseño se compromete con un solo mundo visual, como el cartel que imita. Por eso el contenedor Android desactiva explícitamente el oscurecimiento algorítmico del WebView y usa un tema `Light`, no `DayNight`. Dejar que el sistema invierta estos colores no da un modo oscuro: da el mismo cartel pasado por un filtro que apaga el turquesa, ensucia el crema y deja las sombras duras sin sentido. Si algún día se quiere modo oscuro de verdad, se diseña —repintando la paleta a mano—, no se delega en el inversor del navegador.
 
 ---

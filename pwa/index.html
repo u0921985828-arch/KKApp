@@ -34,6 +34,24 @@
   --mono:ui-monospace,'Roboto Mono','DejaVu Sans Mono',monospace;
 
   --dur:.16s;
+
+  /* ---- tokens semánticos de la hoja de análisis ----
+     La hoja usaba nombres de una paleta anterior —de carta náutica: abyss,
+     shelf, hills, land— que desapareció al repintar la app al cartel
+     serigrafiado. Las referencias se quedaron, así que ese panel llevaba
+     tiempo dibujándose sin color: `var()` sin definir no aplica la
+     declaración y el elemento hereda lo que haya.
+
+     Se mantienen los nombres, porque son los que usa el panel, y se
+     enganchan a la paleta viva. Así el significado sigue siendo semántico
+     —correcto, en curso, defecto— y no hay dos paletas conviviendo. */
+  --line:rgba(22,28,26,.18);   /* filete fino, la tinta al 18%          */
+  --abyss:var(--ink);          /* texto sobre pastilla de color         */
+  --land:#E5AE3C;              /* ámbar: paso en curso, cobertura media */
+  --coral:var(--tomato);       /* defecto, palabra sin traducir         */
+  --cyan:var(--sea-d);         /* resuelto: turquesa oscuro, legible    */
+  --shelf:#E4FAF7;             /* fondo de pastilla resuelta            */
+  --hills:var(--leaf);         /* comprobación superada                 */
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -263,6 +281,30 @@ body{
   font-size:13.5px;position:relative;
 }
 .alerta b{color:var(--tomato);font-weight:800}
+
+/* Aviso proporcionado al hueco.
+
+   Un solo término sin traducir es una nota al margen; la versión fuerte
+   —relleno rosa, contorno de tinta entero— se reserva para cuando falta
+   una parte apreciable de la frase, que es cuando el resultado deja de
+   ser fiable. Misma familia gráfica (el filete de tinta desplazado del
+   cartel), distinto volumen.
+
+   Se escribe con la clase doblada para que gane al degradado de `.alerta`
+   sin depender de cuál de las dos reglas vaya después en la hoja. */
+.alerta.alerta--leve{
+  display:block;
+  border:0;
+  border-left:4px solid var(--tomato);
+  border-radius:0;
+  background:transparent;
+  padding:1px 0 1px 11px;
+  font-size:12.5px;
+  line-height:1.5;
+  color:var(--muted);
+}
+.alerta.alerta--leve b{color:var(--ink);font-weight:700}
+.alerta.alerta--leve[data-tipo="inferido"]{border-left-color:var(--land)}
 .sug{
   display:inline-block;font-size:12.5px;color:var(--ink);font-weight:600;
   background:var(--sun);
@@ -4798,7 +4840,7 @@ const tout  = document.getElementById('tout');
 document.head.insertAdjacentHTML('beforeend', `<style>
 .pipeline{display:flex;margin:0 0 14px;border:1px solid var(--line);border-radius:2px;overflow:hidden}
 .stage{flex:1;padding:7px 4px;text-align:center;font-family:var(--mono);font-size:9px;
-  letter-spacing:.08em;text-transform:uppercase;color:#2E5364;background:var(--sea);
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink);background:var(--sea);
   border-right:1px solid var(--line)}
 .stage:last-child{border-right:none}
 .stage.on{color:var(--abyss);background:var(--land)}
@@ -4820,7 +4862,7 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .revnote{font-size:13px;color:var(--muted);margin:10px 0 0;padding-top:9px;
   border-top:1px dashed var(--line);position:relative}
 .revnote .k{color:var(--cyan)}
-.draftline{font-family:var(--mono);font-size:12px;color:#456F80;margin:6px 0 0;
+.draftline{font-family:var(--mono);font-size:12px;color:var(--muted);margin:6px 0 0;
   text-decoration:line-through}
 .alt,.terms{position:relative}
 /* la isla como indicador de carga: se rellena de oeste a este */
@@ -5060,20 +5102,44 @@ function renderRule(x, k, det){
     <p class="seg-src">${origen}</p>
     <div class="seg-out"><p class="rmain">${cuerpo}</p></div>
 
-    ${infer.length ? `<div class="alerta" style="border-left-color:var(--land);background:rgba(229,174,60,.07)">
-      <span><b style="color:var(--land)">Inferido:</b> ${infer.map(t=>esc(t.t)).join(', ')}. Derivado por reglas, no verificado. Un hablante podría decirlo de otra forma.</span>
-    </div>` : ''}
-    ${r.unknown.length ? `<div class="alerta">
-      <span><b>Sin traducir:</b> ${r.unknown.map(esc).join(', ')}. No está en el diccionario y no hay forma fiable de derivarla, así que se deja tal cual en vez de inventarla.
-      ${r.unknown.map(u=>{
-        const sg = (typeof sugerencias === 'function') ? sugerencias(u, 3) : [];
-        if(sg.length)
-          return `<br><span style="color:var(--muted)">¿Quisiste decir?</span> ${sg.map(x=>
+    ${infer.length ? (() => {
+      const leve = infer.length === 1;
+      const clase = 'alerta' + (leve ? ' alerta--leve' : '');
+      const estilo = leve ? '' : ' style="border-left-color:var(--land);background:rgba(229,174,60,.07)"';
+      return `<div class="${clase}" data-tipo="inferido"${estilo}>
+      <span><b${leve ? '' : ' style="color:var(--land)"'}>Inferido:</b> ${infer.map(t=>esc(t.t)).join(', ')}. Derivado por reglas, no verificado.${leve ? '' : ' Un hablante podría decirlo de otra forma.'}</span>
+    </div>`;
+    })() : ''}
+    ${r.unknown.length ? (() => {
+      /* El aviso baja de tono cuando falta una sola palabra y el resto de
+         la frase sí está traducida: el resultado sigue siendo utilizable y
+         no merece robarle protagonismo a la traducción. */
+      const leve = r.unknown.length === 1 && r.coverage >= 0.85;
+      const cuantas = r.unknown.length === 1 ? 'No está' : 'No están';
+      return `<div class="alerta${leve ? ' alerta--leve' : ''}">
+      <span><b>Sin traducir:</b> ${r.unknown.map(esc).join(', ')}. ${leve
+        ? 'Se deja tal cual en vez de inventarla.'
+        : cuantas + ' en el diccionario y no hay forma fiable de derivarlas, así que se dejan tal cual en vez de inventarlas.'}
+      ${(() => {
+        /* Las sugerencias son por palabra; la explicación general, no. Iba
+           dentro del mismo recorrido y se repetía una vez por cada término
+           sin traducir: con dos, el mismo párrafo dos veces seguidas. */
+        let sinSugerencia = false;
+        const listas = r.unknown.map(u => {
+          const sg = (typeof sugerencias === 'function') ? sugerencias(u, 3) : [];
+          if(!sg.length){ sinSugerencia = true; return ''; }
+          return `<br><span style="color:var(--muted)">¿Quisiste decir?</span> ${sg.map(x =>
             `<span class="sug" data-sug="${esc(x.es)}">${esc(x.es)} → <b>${esc(x.pw)}</b></span>`).join(' ')}`;
-        return `<br><span style="color:var(--muted)">Muchas palabras abstractas del español
-          no tienen una sola palabra equivalente en criollo: se dirían con un rodeo.</span>`;
-      }).join('')}</span>
-    </div>` : ''}
+        }).join('');
+
+        const coletilla = (sinSugerencia && !leve)
+          ? `<br><span style="color:var(--muted)">Muchas palabras abstractas del español
+             no tienen una sola palabra equivalente en criollo: se dirían con un rodeo.</span>`
+          : '';
+        return listas + coletilla;
+      })()}</span>
+    </div>`;
+    })() : ''}
 
     <div class="seg-foot">
       <button class="act" data-copiar="${esc(r.text)}"><svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V4a2 2 0 0 1 2-2h10"/></svg>Copiar</button>
