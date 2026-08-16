@@ -5,7 +5,7 @@
 **Fecha:** agosto 2026
 
 > **Actualización — v0.7.** Aplicadas las cuatro fases.
-> Resultado: **66/70 (94%)**, desde 6/70 (9%).
+> Resultado: **67/70 (96%)**, desde 6/70 (9%).
 > Detalle por fenómeno al final del documento (§8).
 
 ---
@@ -289,10 +289,10 @@ Orden sensato: Fase 1 y 2 primero (recuperan ~30 casos con trabajo acotado), med
 | SUB subordinación | 0/5 | **5/5** | resuelto |
 | PRD producción ES→PW | 1/10 | **10/10** | resuelto |
 | INT interrogación | 1/4 | **2/4** | |
-| SN sintagma nominal | 1/7 | **5/7** | |
+| SN sintagma nominal | 1/7 | **6/7** | |
 | FOC focalización | 0/4 | **4/4** | resuelto |
 | SER verbos seriales | 0/4 | **4/4** | resuelto |
-| **GLOBAL** | **6/70 (9%)** | **66/70 (94%)** | |
+| **GLOBAL** | **6/70 (9%)** | **67/70 (96%)** | |
 
 ### Qué se implementó
 
@@ -358,7 +358,6 @@ Resultado: COP 4/5 → 5/5.
 |---|---|
 | **INT-01** `yu a come` → «¿vienes?» | **Irreducible.** La cadena es idéntica a la afirmativa; sólo la entonación las distingue, y en texto plano no existe. |
 | **INT-03** `wah mek yu seh dat` | Resuelto salvo el tiempo verbal: sale «¿por qué dijiste eso?» en vez de «dices». Requiere saber que la pregunta es habitual, no puntual. |
-| **SN-04** `a fi mi book` | Colisión entre dos patrones de foco: el posesivo tónico gana sobre el posesivo con nominal. |
 | **SN-07** «una casa grande» → `wan big yaad` | **El orden es correcto.** La discrepancia es sólo léxica: el motor elige `yaad` y la batería esperaba `house`. `yaad` es la forma más auténtica, así que aquí el fallo probablemente está en la respuesta esperada, no en el motor. Se deja como fallo para no ajustar la prueba al resultado. |
 
 ### Rendimiento final por dirección

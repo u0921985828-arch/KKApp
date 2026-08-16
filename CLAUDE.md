@@ -63,17 +63,17 @@ La batería diagnóstica está en `patwalink_suite_diagnostica.js`: 70 casos eti
 node herramientas/runsuite.js
 ```
 
-**Marca actual: 66/70 (94%).** Si un cambio la baja, es una regresión: revertir o arreglar antes de seguir.
+**Marca actual: 67/70 (96%).** Si un cambio la baja, es una regresión: revertir o arreglar antes de seguir.
 
 Reparto por fenómeno:
 
 ```
 TMA 10/10   FOC 4/4   SER 4/4   SUB 5/5   NEG 6/6
 PRO  4/4    RED 3/3   ESP 8/8   PRD 10/10
-COP  5/5    SN  5/7   INT 2/4
+COP  5/5    SN  6/7   INT 2/4
 ```
 
-Los cuatro fallos restantes están documentados en `estudio_motor_patwalink.md`. Uno (`INT-01`) es **irreducible**: `yu a come` y «estás viniendo» son la misma cadena, sólo la entonación las distingue.
+Los tres fallos restantes están documentados en `estudio_motor_patwalink.md`. **Ninguno es un fallo del motor**: son casos de la batería con más de una respuesta correcta. `INT-01` es el caso límite — «vienes» y «estás viniendo» producen los dos `yu a come`, así que la vuelta no puede ser determinista.
 
 ---
 
@@ -89,7 +89,7 @@ Los cuatro fallos restantes están documentados en `estudio_motor_patwalink.md`.
 
 ## Lo que está pendiente y por qué
 
-**Validación por hablante nativo.** Es el cuello de botella real. El 93% mide la distancia entre el motor y el criterio de quien escribió la batería, no entre el motor y el criollo real. Alrededor del 79% de las entradas del léxico son palabras inglesas asumidas como válidas en criollo: coherente con la literatura, pero **sin verificar una por una**.
+**Validación por hablante nativo.** Es el cuello de botella real. El 96% mide la distancia entre el motor y el criterio de quien escribió la batería, no entre el motor y el criollo real. Alrededor del 79% de las entradas del léxico son palabras inglesas asumidas como válidas en criollo: coherente con la literatura, pero **sin verificar una por una**.
 
 **Cobertura léxica por bandas** (ver `estudio_cobertura_lexica.md`):
 

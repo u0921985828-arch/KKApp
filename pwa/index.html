@@ -1724,7 +1724,13 @@ function analizarFoco(toks){
     const pr0 = datoDe(toks[2],'pron');
     const ton = {0:'mío',1:'tuyo',2:'suyo',3:'nuestro',4:'vuestro',5:'suyo'}[pr0.p];
     const dm = toks[3] ? normalize(toks[3]) : null;
-    const hayNominal = toks[3] && tipoDe(toks[3], toks[2]) === 'noun';
+    /* `fi mi` es el determinante posesivo, así que lo que venga detrás se
+       lee como nombre aunque el índice prefiera el verbo: en `a fi mi book`,
+       `book` es «libro» y no «reservar». Es la misma desambiguación
+       posicional que ya aplica `tipoDe` tras determinante, pero ahí no salta
+       porque el token anterior es un pronombre, no un determinante. */
+    const h3 = toks[3] ? lookupPw(toks[3]) : null;
+    const hayNominal = !!(h3 && h3.some(x=>x.type === 'noun'));
     const suj = dm === 'dat' ? 'eso' : (dm === 'dis' ? 'esto' : 'eso');
     if(!hayNominal && !toks[4])
       return {texto: suj + ' es ' + ton, etiqueta:'FOC posesivo tónico focalizado'};
@@ -2704,7 +2710,11 @@ function marcarInterrogativa(s){
   const ws = s.trim().split(/\s+/);
   const w1 = (ws[0]||'').toLowerCase();
   const w2 = (w1 + ' ' + (ws[1]||'')).toLowerCase();
-  if(!WH_ES.includes(w1) && !WH_ES.includes(w2)) return s;
+  /* La polar no tiene marca en criollo: sólo la entonación, que en texto
+     se escribe con el signo final. Si el original lo trae, la traducción
+     es una pregunta y el español exige además el de apertura. */
+  const polar = s.trim().endsWith('?');
+  if(!polar && !WH_ES.includes(w1) && !WH_ES.includes(w2)) return s;
   let t = s.trim();
   if(!t.endsWith('?')) t += '?';
   if(!t.startsWith('¿')) t = '¿' + t;
@@ -2725,6 +2735,11 @@ function finish(out, unknown, applied, total, opts){
     .replace(/\s{2,}/g,' ')
     .trim();
   if(!(opts && opts.dirPw)) s = marcarInterrogativa(s);
+  else if(s.includes('¿')){
+    /* el criollo escribe la pregunta como el inglés: sólo signo final */
+    s = s.replace(/¿\s*/g, '');
+    if(!s.endsWith('?')) s += '?';
+  }
   s = s.charAt(0).toUpperCase() + s.slice(1);
   s = s.replace(/^¿./, m=>m.toUpperCase());
   const known = total - unknown.length;

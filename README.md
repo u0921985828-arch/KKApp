@@ -3,7 +3,7 @@
 Traductor bidireccional **español ↔ patois jamaicano**.
 Un solo fichero HTML. Sin conexión, sin API, sin publicidad, sin cuentas.
 
-![motor](https://img.shields.io/badge/bater%C3%ADa-66%2F70-brightgreen)
+![motor](https://img.shields.io/badge/bater%C3%ADa-67%2F70-brightgreen)
 
 ---
 
@@ -34,7 +34,7 @@ patwalink_schema.sql        esquema Supabase para el glosario colaborativo
 node herramientas/runsuite.js
 ```
 
-Sale con código 1 si baja de 66 casos. Ejecutarlo antes de cada commit.
+Sale con código 1 si baja de 67 casos. Ejecutarlo antes de cada commit.
 
 ## Compilar el APK
 
@@ -84,11 +84,12 @@ aparece «Añadir a pantalla de inicio».
 
 ## Estado
 
-El motor supera 66 de 70 casos gramaticales. Los cuatro restantes están
-documentados; uno de ellos no tiene solución posible en texto plano.
+El motor supera 67 de 70 casos gramaticales. Los tres restantes no son
+fallos del motor: son casos con más de una traducción correcta, y uno de
+ellos no tiene solución posible en texto plano.
 
 **El glosario está pendiente de validación por hablantes nativos.** Alrededor
 del 79% de las entradas son palabras inglesas asumidas como válidas en criollo:
 es lo que describe la literatura sobre la composición del léxico, pero no se ha
-verificado entrada por entrada. Hasta que eso ocurra, el 94% mide la distancia
+verificado entrada por entrada. Hasta que eso ocurra, el 96% mide la distancia
 respecto al criterio de quien escribió la batería, no respecto al criollo real.

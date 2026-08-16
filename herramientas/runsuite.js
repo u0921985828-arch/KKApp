@@ -48,7 +48,7 @@ if(fallos.length){
     '\\n     obtenido: ' + r.got));
 }
 /* umbral de regresión */
-const MINIMO = 66;
+const MINIMO = 67;
 if(ok < MINIMO){
   console.error('\\nREGRESIÓN: ' + ok + ' < ' + MINIMO + ' casos.');
   process.exit(1);
