@@ -46,6 +46,8 @@ Los marcadores **se apilan**: `did a` es pasado progresivo, `did done` es pasado
 
 **Cópula supletiva.** Tres formas: `a` ante nominal (ser), `deh` ante lugar (estar), cero ante adjetivo.
 
+**Enclíticos y existencial.** El español suelda el pronombre al verbo (`llévame`) y el criollo lo deja suelto detrás (`carry mi`); `separarEnclitico` los separa después del léxico y antes de la derivación, que si no inventa un cognado de la forma soldada. El objeto NO se marca con `objPron`: esa marca la usa `moveClitics` para anteponerlo al estilo español. Para `haber` impersonal hay dos salidas: `deh` pospuesto en la pregunta locativa, `it have` en el resto.
+
 **Incoativas.** `get`/`tun` + adjetivo es cambio de estado, no el verbo léxico: `get cold` es *enfriarse*, no «conseguir frío». `INCOATIVOS` indexa por el adjetivo **español**, no por el token criollo, para cubrir todas las grafías de golpe; lo que no está en la tabla cae en la perífrasis con `ponerse`, que siempre funciona. La regla se comprueba antes que el verbo suelto, y no dispara si tras el adjetivo hay un nombre (`get nice ting` sigue siendo «conseguir»).
 
 **`conjugate()`** — el español es la parte irregular; el criollo no conjuga. Está resuelto por patrón (diptongación e→ie, o→ue, debilitación e→i) en lugar de por enumeración.
@@ -106,6 +108,9 @@ dos versiones contra el mismo corpus y la misma semilla.
 - **La negación es un token propio**, no va embebida en el verbo. Si se embebe, los clíticos se colocan mal (`lo no vi` en vez de `no lo vi`).
 - **`addAll` deduplica por lema español.** Añadir dos entradas patois con la misma traducción descarta la segunda en silencio. Si una palabra no aparece, comprobar esto primero.
 - **El orden de `SUFIJOS`** en la derivación importa: los largos deben ir antes (`-encia` antes que `-ia`).
+- **El orden de las ramas del bucle es semántico, no cosmético.** La cópula dispara con `a`, así que cualquier regla que compita por ese token —preposición de lugar tras verbo de movimiento, futuro sin verbo— tiene que ir **antes**. Puesta después queda inalcanzable, y el síntoma es sutil: no falla, traduce otra cosa (`guh a shop` → «ve es tiendas»).
+- **`matchPhrase` sólo busca desde dos tokens.** Una fórmula de una palabra necesita la comprobación aparte que hay tras el léxico. Si no, la entrada está en la tabla sin poder casar nunca.
+- **`había`/`habrá` son existenciales y auxiliares.** Con un participio detrás son pluscuamperfecto: sin esa comprobación, «había comido» sale «it have nyam».
 
 ---
 

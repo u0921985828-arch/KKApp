@@ -50,7 +50,9 @@ cobertura léxica y qué palabras faltan. Reproducible: la semilla es fija.
 `--motor=otro.html` compara dos versiones contra el mismo corpus.
 
 Mide carga y cobertura; **no** mide si la traducción es buena. Resultados en
-`estudios/estudio_uso_simulado.md`.
+`estudios/estudio_uso_simulado.md`: la primera pasada dejó el 53,5% de los
+usuarios con alguna palabra sin cubrir, y tras aplicar las reparaciones que
+señaló, el 1,6%.
 
 ## Compilar el APK
 

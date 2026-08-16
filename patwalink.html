@@ -1616,7 +1616,19 @@ function parseTMA(toks, i){
       r.cond = w.startsWith('c') ? 'poder' : (w.startsWith('sh') ? 'deber' : 'cond');
       k++; avanzo = true; continue;
     }
-    if(!r.fut && M_FUT.includes(w2)){ r.fut = true; k += 2; avanzo = true; continue; }
+    /* `a go` sólo es futuro si detrás viene un verbo. Ante un lugar
+       —`mi a go a di shop`— el `go` es el verbo léxico «ir» y el `a`
+       que sigue es preposición, no parte del marcador. */
+    if(!r.fut && M_FUT.includes(w2)){
+      const sig = toks[k+2] ? lookupPw(toks[k+2]) : null;
+      const verboDetras = sig && sig.some(h=>h.type === 'verb');
+      /* sólo `done` se apila tras `a go`; `a` detrás no es marcador sino
+         la preposición de lugar, que es justo el caso que hay que excluir */
+      const marcadorDetras = toks[k+2] && M_PERF.includes(normalize(toks[k+2]));
+      if(verboDetras || marcadorDetras || !toks[k+2]){
+        r.fut = true; k += 2; avanzo = true; continue;
+      }
+    }
     if(!r.fut && M_FUT.includes(w)){
       r.fut = true;
       if(w === 'wi' || w === 'wii') r.futSint = true;
@@ -1681,9 +1693,14 @@ function realizarTMA(tma, lemma, p){
   if(tma.ant)
     return {t: neg + cl + conjugate('haber', p, 'imp') + ' ' + participio(lemma),
             etiqueta:'TMA did → anterior (pluscuamperfecto)'};
-  if(tma.prog)
+  if(tma.prog){
+    /* el progresivo de «ir» no se perifrasea en español: `mi a go a town`
+       es «voy al pueblo», no «estoy yendo al pueblo», que suena forzado */
+    if(lemma === 'ir')
+      return {t: neg + conjugate('ir', p, 'pres'), etiqueta:'TMA a + ir → presente'};
     return {t: neg + cl + conjugate('estar', p, 'pres') + ' ' + gerund(lemma),
             etiqueta:'TMA a → progresivo'};
+  }
 
   if(tma.ant2)
     return {t: neg + conjugate(lemma, p, 'pret'), etiqueta:'NEG neva → pasado negado'};
@@ -1903,6 +1920,26 @@ function pwToEsCore(toks){
 
     const hit = lookupPw(w);
 
+    /* Fórmula fija de una sola palabra. `matchPhrase` sólo busca a partir
+       de dos tokens, así que entradas como `respect` o `zeen` estaban en
+       la tabla sin poder casar nunca. Se comprueba DESPUÉS del léxico y
+       sólo si la palabra no está en él, para no pisar ninguna traducción
+       que ya funcionaba. */
+    if(typeof PHRASE_PW !== 'undefined'){
+      const clave  = normalize(w);
+      const suelta = PHRASE_PW.get(clave);
+      /* La fórmula gana también cuando el léxico sólo llegó por parecido
+         fonético: `seen` no está en el índice y acababa cazado por `send`,
+         de modo que «seen» salía «envía». Una coincidencia exacta pesa más
+         que una aproximada. */
+      if(suelta && (!hit || !PW_INDEX.has(clave))){
+        out.push({t: suelta.es, phrase:true});
+        applied.push('FRASE "' + suelta.pw + '" es fórmula fija de una palabra');
+        i++;
+        continue;
+      }
+    }
+
     /* "wi" es pronombre en posición de sujeto y futuro tras sujeto */
     const esMarcador = M_ANT.includes(normalize(w)) || M_FUT.includes(normalize(w)) ||
                        M_COND.includes(normalize(w)) || M_PERF.includes(normalize(w));
@@ -2047,6 +2084,23 @@ function pwToEsCore(toks){
       applied.push('PREP "a" inicial ante nominal → preposición de lugar');
       i++; continue;
     }
+    /* Tras verbo de movimiento, `a` es preposición de lugar: `guh a shop`
+       es «ve a la tienda». Esta comprobación va ANTES que la cópula porque
+       si no, la rama de cópula se lleva el token y sale «ve es tiendas».
+       La misma regla existía más abajo en el bucle, inalcanzable. */
+    const MOTION = ['ir','venir','llegar','volver','viajar','subir','salir',
+                    'correr','andar','seguir','entrar','bajar','pasar'];
+    if(w0 === 'a' && out.length && toks[i+1]){
+      const ultimoV = [...out].reverse().find(o=>o.verbForm);
+      const sigH = lookupPw(toks[i+1]);
+      const sigVerbo = sigH && sigH.some(h=>h.type === 'verb');
+      if(ultimoV && MOTION.includes(ultimoV.lemma) && !sigVerbo){
+        out.push({t:'a', prep:true});
+        applied.push('PREP "a" tras verbo de movimiento → preposición de lugar');
+        i++; continue;
+      }
+    }
+
     if(['a','de','deh'].includes(w0)){
       const nx  = toks[i+1];
       const nh  = nx ? lookupPw(nx) : null;
@@ -2125,6 +2179,15 @@ function pwToEsCore(toks){
         const p   = subject ? subject.p : 2;
         const w0  = normalize(w);
 
+        /* el futuro se comprueba primero: `mi a go` empieza por `a`, que
+           también es progresivo, y si gana la cópula sale «soy» en vez
+           de «voy» */
+        if(tma.fut){
+          out.push({t:(tma.neg?'no ':'') + conjugate('ir', p, tma.ant ? 'imp' : 'pres'),
+                    verbForm:true, lemma:'ir'});
+          applied.push('FUT marcador de futuro sin verbo → ir');
+          i += tma.len; continue;
+        }
         if(tma.prog || M_PROG.includes(w0) || w0 === 'deh'){
           const loc = w0 === 'deh' || (nh && nh.some(h=>h.type==='func' && (h.d.t==='adv'||h.d.t==='prep')));
           const cop = loc ? 'estar' : 'ser';
@@ -2133,11 +2196,6 @@ function pwToEsCore(toks){
           applied.push('COP cópula ' + (loc ? 'locativa (deh) → estar' : 'ecuativa (a) → ser'));
           i += Math.max(tma.len, 1);
           continue;
-        }
-        if(tma.fut){
-          out.push({t: conjugate('ir', p, 'pres'), verbForm:true, lemma:'ir'});
-          applied.push('FUT marcador de futuro sin verbo → ir');
-          i += tma.len; continue;
         }
       }
     }
@@ -2386,6 +2444,33 @@ function esToPw(text){
       continue;
     }
 
+    /* `haber` impersonal. El criollo no tiene un verbo existencial suelto:
+       o pospone el locativo `deh` al sintagma —«weh wan party deh?»— o usa
+       el existencial `it have`. La pregunta locativa pide lo primero; el
+       resto, lo segundo. */
+    if(['hay','habia','habra'].includes(normalize(w))){
+      /* `había`/`habrá` también son el auxiliar del pluscuamperfecto y del
+         futuro compuesto: con un participio detrás, «había comido» no tiene
+         nada de existencial y le toca al tratamiento normal del verbo. */
+      const sig = toks[i+1] ? lookupEs(toks[i+1]) : null;
+      const participioDetras = sig && sig.some(h => h.type === 'verb' && h.tense === 'part');
+      if(!participioDetras){
+        const enPregunta = out.some(o => normalize(o.t) === 'weh');
+        if(enPregunta){
+          out.push({t:'', posponerDeh:true, oculto:true});
+          applied.push('EXIST "' + w + '" en pregunta locativa → deh pospuesto');
+        } else {
+          /* el sujeto expletivo va DELANTE del negador: «it nuh have wata» */
+          const ultimo = out.length ? out[out.length-1] : null;
+          if(ultimo && ultimo.neg) out.splice(out.length - 1, 0, {t:'it'});
+          else out.push({t:'it'});
+          out.push({t:'have', verbForm:true});
+          applied.push('EXIST "' + w + '" → existencial "it have"');
+        }
+        i++; continue;
+      }
+    }
+
     /* cópula: se evalúa antes que nada, "está" colisiona con "esta" */
     if(COPULA.has(normalize(w)) && ['mas','menos'].includes(normalize(toks[i+1]||''))){
       if(!out.some(o=>!o.punct)) out.push({t:'it'});
@@ -2627,6 +2712,21 @@ function esToPw(text){
     const fn = hit && hit.find(h=>h.type==='func');
     if(fn){ out.push({t: fn.d.pw, prep: fn.d.t === 'prep'}); i++; continue; }
 
+    /* Imperativo con enclítico: «llévame», «déjame», «dime». El español
+       suelda el pronombre al verbo y el criollo lo mantiene suelto detrás,
+       así que hay que separarlos antes de rendirse. Va después del léxico
+       —sólo entra si la palabra entera no estaba— y antes de la derivación,
+       que si no inventaría un cognado a partir de la forma soldada. */
+    const enc = !hit ? separarEnclitico(w) : null;
+    if(enc){
+      out.push({t: enc.verbo.d.pw, verbForm:true});
+      /* sin `objPron`: esa marca la usa `moveClitics` para anteponer el
+         clítico al estilo español, y en criollo el objeto va detrás */
+      if(enc.objeto) out.push({t: enc.objeto});
+      applied.push('ENCL "' + w + '" → verbo + pronombre suelto');
+      i++; continue;
+    }
+
     /* último recurso: cascada de derivación */
     const der = (typeof resolverDesconocida === 'function') ? resolverDesconocida(w) : null;
     if(der && der.tipo === 'morfologia'){
@@ -2651,6 +2751,16 @@ function esToPw(text){
     unknown.push(w);
     out.push({t: w, unk:true});
     i++;
+  }
+
+  /* el `deh` existencial va al final de la cláusula, detrás del sintagma
+     al que se refiere, pero delante del signo de cierre */
+  const iDeh = out.findIndex(o => o.posponerDeh);
+  if(iDeh >= 0){
+    out.splice(iDeh, 1);
+    let fin = out.length;
+    while(fin > 0 && out[fin-1].punct) fin--;
+    out.splice(fin, 0, {t:'deh'});
   }
 
   return finish(out, unknown, applied, toks.length, {dirPw:true});
@@ -4143,6 +4253,106 @@ addAll(NOUNS, ADD7_NOUNS);
 rebuildIndex();
 
 /* ============================================================
+   LÉXICO v0.8 — reparaciones del estudio de uso simulado
+
+   Todo lo de aquí sale de `estudios/estudio_uso_simulado.md`: son las
+   palabras que más usuarios echaron en falta en 82.020 traducciones,
+   por orden de gente afectada, no de veces que aparecen. Un hueco que
+   toca a 1.600 personas una vez importa más que uno que toca a diez
+   personas doscientas veces.
+   ============================================================ */
+
+/* --- variantes ortográficas de entradas que YA existen ---
+   Van por `push` directo y no por `addAll` a propósito: addAll
+   deduplica por lema ESPAÑOL, así que descartaría en silencio
+   cualquier grafía alternativa de una palabra ya traducida — que es
+   exactamente lo que son éstas. Se añaden DESPUÉS de la original para
+   que la dirección es→pw siga eligiendo la grafía que ya elegía. */
+VERBS.push(
+  {pw:'du',         es:'hacer'},     /* 799 usuarios · grafía de "do"   */
+  {pw:'gi',         es:'dar'},       /* 670 · grafía de "give"          */
+  {pw:'hol',        es:'sujetar'},   /* 453 · grafía de "hold"          */
+  {pw:'understand', es:'entender'}   /* 169 · junto a "undastan"        */
+);
+
+/* --- palabras que no estaban --- */
+addAll(VERBS, [
+  {pw:'chill', es:'relajarse'},      /* 167 */
+  {pw:'done',  es:'acabarse'}        /* 312 · "money done" es léxico,
+                                        no el marcador completivo      */
+]);
+
+addAll(NOUNS, [
+  {pw:'vibes',       es:'ambiente',    g:'m'},   /* 209 */
+  {pw:'certificate', es:'certificado', g:'m'}    /* 164 */
+]);
+
+addAll(ADJS, [
+  {pw:'cool', es:'guay', inv:true}                /* 205 */
+]);
+
+FUNC.push(
+  {pw:'yeah',    es:['sí'],          t:'adv'},    /* 239 */
+  {pw:'yet',     es:['todavía'],     t:'adv'},    /* 175 */
+  {pw:'tonight', es:['esta noche'],  t:'adv'},
+  {pw:'already', es:['ya'],          t:'adv'},    /* 168 */
+  {pw:'dun',     es:['ya'],          t:'adv'}
+);
+
+/* --- fórmulas fijas ---
+   La cortesía era el peor dominio del estudio (90,0% de cobertura) y es
+   lo primero que escribe cualquiera al abrir un traductor. */
+const FRASES_08 = [
+  {pw:'please',       es:'por favor'},        /* 1.619 usuarios */
+  {pw:'yeah man',     es:'claro que sí'},
+  {pw:'cool nuh man', es:'tranquilo, tío'},
+  {pw:'weekend',      es:'fin de semana'},    /*   517 */
+  {pw:'mi miss yu',   es:'te echo de menos'}, /*   177 */
+  {pw:'gimme a hand', es:'échame una mano'},
+  {pw:'nuff love',    es:'un abrazo fuerte'}
+];
+
+/* ---------- enclíticos del español ----------
+   El orden importa: las combinaciones largas van primero, porque
+   «dámelo» termina en «lo» y quedarse ahí daría «dáme» + «lo». */
+const ENCLITICOS = [
+  ['melo','mi it'], ['mela','mi it'], ['telo','yu it'], ['tela','yu it'],
+  ['selo','im it'], ['sela','im it'], ['noslo','wi it'], ['nosla','wi it'],
+  ['nos','wi'],  ['los','dem'], ['las','dem'], ['les','dem'],
+  ['me','mi'],   ['te','yu'],   ['se',''],
+  ['lo','it'],   ['la','it'],   ['le','im']
+];
+
+function separarEnclitico(tok){
+  const n = String(tok).toLowerCase();
+  for(const [cl, obj] of ENCLITICOS){
+    if(!n.endsWith(cl)) continue;
+    const raiz = n.slice(0, -cl.length);
+    if(raiz.length < 2) continue;
+    const h = lookupEs(raiz);
+    const v = h && h.find(x => x.type === 'verb');
+    if(v){
+      /* «gimme» ya lleva el objeto dentro (give + me): añadirle otro
+         «mi» daría «gimme mi it» */
+      let objeto = obj;
+      if(v.d.pw === 'gimme' && objeto.startsWith('mi')) objeto = objeto.slice(2).trim();
+      return {verbo:v, clitico:cl, objeto};
+    }
+  }
+  return null;
+}
+
+FRASES_08.forEach(p=>{
+  if(!PHRASE_ES.has(normalize(p.es))){
+    PHRASES.push(p);
+    if(!PHRASE_PW.has(normalize(p.pw))) PHRASE_PW.set(normalize(p.pw), p);
+    PHRASE_ES.set(normalize(p.es), p);
+  }
+});
+
+rebuildIndex();
+
+/* ============================================================
    DERIVACIÓN — reducir el "no encontrado" al mínimo
 
    Cascada de cuatro recursos ante una palabra desconocida:
@@ -4379,7 +4589,21 @@ function resolverDesconocida(w){
   const morf = porMorfologia(w);
   if(morf) return {tipo:'morfologia', hit:morf.hit, lema:morf.lema, conf:CONF.morfologia};
 
-  const cands = cognadoIngles(w);
+  let cands = cognadoIngles(w);
+
+  /* 1b. Si ninguna regla de sufijo dispara y la palabra es un plural, se
+     reintenta sobre el singular. `circunstancias` no casa con `-ancia`
+     porque termina en -s, pero `circunstancia` sí; sin esto, el plural de
+     cualquier palabra derivable se queda sin derivar. Se devuelve la forma
+     singular a propósito: el criollo no marca el plural con -s sino con
+     `dem`, que ya coloca el sintagma nominal. */
+  if(!cands.some(c => c.regla) && /s$/i.test(w)){
+    const singulares = /es$/i.test(w) ? [w.slice(0, -2), w.slice(0, -1)] : [w.slice(0, -1)];
+    for(const sg of singulares){
+      const extra = cognadoIngles(sg);
+      if(extra.some(c => c.regla)){ cands = extra; break; }
+    }
+  }
 
   /* 2. ¿el cognado existe ya en el léxico patois? */
   for(const c of cands){

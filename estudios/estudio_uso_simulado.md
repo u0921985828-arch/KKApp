@@ -1,6 +1,7 @@
 # PatwaLink — Estudio de uso simulado
 
 **10.000 usuarios · 8 horas · 82.020 traducciones**
+Cobertura 95,5% → **99,96%** tras aplicar las reparaciones (§7)
 Semilla `20260816` · repertorio de 459 frases · motor `patwalink.html`
 
 ```bash
@@ -264,7 +265,84 @@ advierte que aparece al tocar el orden de las ramas.
 
 ---
 
-## 7 · Qué hacer con esto
+## 7 · Reparación: qué pasó al aplicarla
+
+Las seis reparaciones de la sección anterior se aplicaron y el estudio se
+volvió a ejecutar con **la misma semilla y el mismo corpus**, de modo que las
+cifras son comparables una a una.
+
+| | Antes | Después |
+|---|---:|---:|
+| Cobertura media | 95,51% | **99,96%** |
+| Traducciones completas | 88,0% | 99,8% |
+| Sesiones con hueco | 45,0% | 1,2% |
+| **Usuarios con hueco** | **53,5%** | **1,6%** |
+| Palabras distintas sin cubrir | 23 | 1 |
+| Latencia media | 0,055 ms | 0,033 ms |
+| p95 | 0,293 ms | 0,099 ms |
+
+Diez de los once dominios quedan al 100%. El abstracto sube del 91,8% al 97,8%.
+La latencia mejora de propina: cada palabra cubierta es una derivación menos, y
+la derivación era la ruta cara.
+
+### Qué se tocó
+
+**Léxico (v0.8).** Las grafías `du`, `gi`, `hol` y `understand` van por `push`
+directo y no por `addAll`, porque `addAll` deduplica por lema **español** y
+habría descartado en silencio toda grafía alternativa de una palabra ya
+traducida — que es exactamente lo que son. Se añaden después de la original
+para que la dirección es→pw siga eligiendo la grafía que ya elegía.
+
+**Fórmulas de una sola palabra.** `matchPhrase` sólo buscaba a partir de dos
+tokens, así que entradas como `respect`, `seen` o `zeen` llevaban en la tabla
+desde el principio **sin poder casar nunca**. Ahora se comprueban después del
+léxico, y sólo si la palabra no está en él o si el léxico llegó a ella por mero
+parecido fonético: `seen` no está en el índice y acababa cazado por `send`, de
+modo que salía «envía». Una coincidencia exacta pesa más que una aproximada.
+
+**`a go` ante locativo.** El futuro sólo se reconoce si detrás viene un verbo.
+`mi a go a di shop` es «voy a la tienda»: ahí `go` es el verbo léxico y el `a`
+que sigue es preposición. De paso, el progresivo de *ir* no se perifrasea en
+español — «voy», no «estoy yendo».
+
+**Orden de reglas del locativo.** La preposición tras verbo de movimiento se
+comprueba ahora **antes** que la cópula. La regla ya existía, pero estaba más
+abajo en el bucle y era inalcanzable: la cópula se llevaba el token primero.
+Mismo caso con el futuro sin verbo, que se evaluaba después de una cópula que
+dispara con `a` — por eso `mi a go` daba «soy» en vez de «voy».
+
+**Enclíticos.** El español suelda el pronombre al verbo (`llévame`) y el
+criollo lo mantiene suelto detrás (`carry mi`). La separación se intenta
+después del léxico y antes de la derivación, que si no inventaría un cognado a
+partir de la forma soldada.
+
+**`haber` impersonal.** Dos construcciones según el contexto: la pregunta
+locativa pospone `deh` al sintagma (`weh wan party deh?`) y el resto usa el
+existencial `it have`. Cuidado con que `había`/`habrá` son también el auxiliar
+del pluscuamperfecto: con un participio detrás no tienen nada de existencial, y
+sin esa comprobación «había comido» salía «it have nyam».
+
+**Plurales derivables.** Al revisar la única palabra que seguía fallando
+apareció un fallo general: la cascada probaba el cognado sobre la palabra tal
+cual, nunca sobre el lema reducido. `circunstancia` derivaba y `circunstancias`
+no. Ahora, si ninguna regla de sufijo dispara y la palabra es un plural, se
+reintenta sobre el singular. Se devuelve la forma singular a propósito: el
+criollo no marca el plural con -s sino con `dem`.
+
+### Lo que sigue sin cubrirse
+
+Una palabra: **`proyecto`**, que afecta a 163 usuarios de 10.000. No se ha
+añadido a mano a propósito. Añadir justo las palabras que mi corpus contiene
+sería ajustar el motor a su propia prueba, exactamente el vicio que se evitó al
+escribir el corpus sin mirar el léxico. `proyecto` no deriva porque ninguna
+regla de sufijo cubre el paso español -o → inglés -ct, y las reglas de la
+cascada están para generalizar, no para tapar casos sueltos. Es la banda
+abstracta que ya documenta `estudio_cobertura_lexica.md`, y se arregla
+ampliando el léxico de esa banda, no con un parche.
+
+---
+
+## 8 · Qué hacer con esto
 
 Por relación entre lo que cuesta y a cuánta gente alcanza:
 
@@ -279,4 +357,5 @@ Por relación entre lo que cuesta y a cuánta gente alcanza:
 
 Y lo que **no** cambia: nada de esto acerca la validación por hablantes nativos.
 El estudio dice que el motor aguanta y qué le falta al diccionario. No dice, ni
-puede decir, si lo que traduce es buen criollo.
+puede decir, si lo que traduce es buen criollo. Que la cobertura sea del 99,96%
+significa que el motor reconoce las palabras, no que acierte con ellas.
