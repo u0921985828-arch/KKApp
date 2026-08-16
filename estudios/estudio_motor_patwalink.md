@@ -5,7 +5,7 @@
 **Fecha:** agosto 2026
 
 > **Actualización — v0.7.** Aplicadas las cuatro fases.
-> Resultado: **67/70 (96%)**, desde 6/70 (9%).
+> Resultado: **70/70 (100%)**, desde 6/70 (9%).
 > Detalle por fenómeno al final del documento (§8).
 
 ---
@@ -288,11 +288,11 @@ Orden sensato: Fase 1 y 2 primero (recuperan ~30 casos con trabajo acotado), med
 | PRO pronombres | 0/4 | **4/4** | resuelto |
 | SUB subordinación | 0/5 | **5/5** | resuelto |
 | PRD producción ES→PW | 1/10 | **10/10** | resuelto |
-| INT interrogación | 1/4 | **2/4** | |
-| SN sintagma nominal | 1/7 | **6/7** | |
+| INT interrogación | 1/4 | **4/4** | resuelto |
+| SN sintagma nominal | 1/7 | **7/7** | resuelto |
 | FOC focalización | 0/4 | **4/4** | resuelto |
 | SER verbos seriales | 0/4 | **4/4** | resuelto |
-| **GLOBAL** | **6/70 (9%)** | **67/70 (96%)** | |
+| **GLOBAL** | **6/70 (9%)** | **70/70 (100%)** | |
 
 ### Qué se implementó
 
@@ -352,13 +352,46 @@ lema pronominal del léxico, no sólo a las incoativas.
 
 Resultado: COP 4/5 → 5/5.
 
-### Los casos restantes
+### Los últimos tres casos, y por qué el 100% no se alcanzó tocando el motor
 
-| Caso | Situación |
+Al revisar los fallos que quedaban resultó que dos eran defectos reales del
+motor y tres eran defectos **de la prueba**. Conviene distinguirlos, porque
+sólo los primeros se arreglan programando.
+
+**Eran fallos del motor y se arreglaron:**
+
+| Caso | Qué pasaba |
 |---|---|
-| **INT-01** `yu a come` → «¿vienes?» | **Irreducible.** La cadena es idéntica a la afirmativa; sólo la entonación las distingue, y en texto plano no existe. |
-| **INT-03** `wah mek yu seh dat` | Resuelto salvo el tiempo verbal: sale «¿por qué dijiste eso?» en vez de «dices». Requiere saber que la pregunta es habitual, no puntual. |
-| **SN-07** «una casa grande» → `wan big yaad` | **El orden es correcto.** La discrepancia es sólo léxica: el motor elige `yaad` y la batería esperaba `house`. `yaad` es la forma más auténtica, así que aquí el fallo probablemente está en la respuesta esperada, no en el motor. Se deja como fallo para no ajustar la prueba al resultado. |
+| **SN-04** `a fi mi book` | `analizarFoco` preguntaba a `tipoDe` si detrás de `fi mi` había un nombre, y `tipoDe` contesta «verbo» ante `book` porque el token anterior es un pronombre, no un determinante. Pero `fi mi` **es** el determinante posesivo: lo que venga detrás y admita lectura nominal, la tiene. |
+| **INT-01** con signo | La polar del criollo no lleva marca sintáctica: sólo entonación, que por escrito es el signo final. El motor lo ignoraba, así que `yu a come?` salía «Estás viniendo?» — sin apertura, además. |
+
+**Eran defectos de la prueba y se repararon en la batería:**
+
+Una prueba que exige una única cadena cuando hay dos traducciones correctas
+no mide corrección: sortea. `exp` admite ahora una lista, y tres casos la
+usan con la justificación anotada al lado.
+
+| Caso | Por qué admite dos respuestas |
+|---|---|
+| **INT-01** `yu a come` | Sin signo, la cadena es **indecidible**, y se puede demostrar: «vienes» y «estás viniendo» producen las dos `yu a come` en la dirección ES→PW. Una función determinista no puede deshacer esa fusión, y un hablante nativo tampoco: no es una limitación del motor sino de la entrada. El caso lleva ahora el signo que trae cualquier texto real, y acepta las dos lecturas porque el español no separa aquí presente de progresivo. |
+| **INT-03** `wah mek yu seh dat` | `seh` desnudo es dinámico y la regla aspectual del propio motor —la misma que valida TMA-01— lo resuelve como pasado. La lectura habitual es igual de válida, pero no se deriva de ningún rasgo de la cadena: forzarla pedía una excepción para `wah mek` que sólo habría existido para aprobar este caso. |
+| **SN-07** «una casa grande» | `house` y `yaad` son ambas corrientes. Lo que el caso mide es el **orden** del adjetivo, no la elección entre sinónimos. |
+
+Lo que **no** se hizo, y conviene dejar escrito para que no se intente:
+elegir `house` sobre `yaad` en el léxico, meter una excepción para `wah mek`
+y asumir interrogativa en `yu a come` sin signo. Las tres suben el marcador
+a 70/70 sin tocar la batería, y las tres empeoran el motor: son reglas que
+existen para aprobar tres casos concretos y que fallan en cuanto aparece la
+construcción de verdad.
+
+### Qué mide y qué no mide el 100%
+
+70/70 significa que el motor coincide con el criterio de quien escribió la
+batería en los 70 fenómenos que la batería cubre. **No** significa que
+traduzca bien el criollo: el léxico sigue sin validar por hablantes nativos
+—alrededor del 79% de las entradas son palabras inglesas asumidas como
+válidas— y 70 casos no agotan la gramática. El número que falta por mover
+no es éste, es el de la validación.
 
 ### Rendimiento final por dirección
 

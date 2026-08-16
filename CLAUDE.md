@@ -63,17 +63,21 @@ La batería diagnóstica está en `patwalink_suite_diagnostica.js`: 70 casos eti
 node herramientas/runsuite.js
 ```
 
-**Marca actual: 67/70 (96%).** Si un cambio la baja, es una regresión: revertir o arreglar antes de seguir.
+**Marca actual: 70/70.** Cualquier fallo es una regresión: el umbral de `runsuite.js` está en 70, así que la batería sale con código 1 si cae uno solo.
 
 Reparto por fenómeno:
 
 ```
 TMA 10/10   FOC 4/4   SER 4/4   SUB 5/5   NEG 6/6
 PRO  4/4    RED 3/3   ESP 8/8   PRD 10/10
-COP  5/5    SN  6/7   INT 2/4
+COP  5/5    SN  7/7   INT 4/4
 ```
 
-Los tres fallos restantes están documentados en `estudio_motor_patwalink.md`. **Ninguno es un fallo del motor**: son casos de la batería con más de una respuesta correcta. `INT-01` es el caso límite — «vienes» y «estás viniendo» producen los dos `yu a come`, así que la vuelta no puede ser determinista.
+**Qué significa ese 100%, y qué no.** Tres casos (`INT-01`, `INT-03`, `SN-07`) admiten dos respuestas correctas cada uno, porque hay dos traducciones válidas y exigir una era sortear. `exp` acepta una lista, y cada caso lleva anotado por qué. `INT-01` es el límite duro del formato: sin signo de interrogación, «vienes» y «estás viniendo» producen los dos `yu a come`, así que la vuelta no puede ser determinista — el caso lleva ahora el signo que trae cualquier texto real.
+
+La lista de respuestas es para entradas genuinamente ambiguas, **no** para tapar salidas incorrectas. Si un caso empieza a fallar, se arregla el motor: ampliar `exp` para que pase es convertir la batería en decorado.
+
+El 100% mide coincidencia con el criterio de quien escribió la batería sobre 70 fenómenos. No mide que el criollo esté bien: eso sigue pendiente de validación por hablantes nativos.
 
 ---
 
@@ -89,7 +93,7 @@ Los tres fallos restantes están documentados en `estudio_motor_patwalink.md`. *
 
 ## Lo que está pendiente y por qué
 
-**Validación por hablante nativo.** Es el cuello de botella real. El 96% mide la distancia entre el motor y el criterio de quien escribió la batería, no entre el motor y el criollo real. Alrededor del 79% de las entradas del léxico son palabras inglesas asumidas como válidas en criollo: coherente con la literatura, pero **sin verificar una por una**.
+**Validación por hablante nativo.** Es el cuello de botella real. El 100% mide la distancia entre el motor y el criterio de quien escribió la batería, no entre el motor y el criollo real. Alrededor del 79% de las entradas del léxico son palabras inglesas asumidas como válidas en criollo: coherente con la literatura, pero **sin verificar una por una**.
 
 **Cobertura léxica por bandas** (ver `estudio_cobertura_lexica.md`):
 

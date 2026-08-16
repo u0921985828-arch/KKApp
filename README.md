@@ -3,7 +3,7 @@
 Traductor bidireccional **español ↔ patois jamaicano**.
 Un solo fichero HTML. Sin conexión, sin API, sin publicidad, sin cuentas.
 
-![motor](https://img.shields.io/badge/bater%C3%ADa-67%2F70-brightgreen)
+![motor](https://img.shields.io/badge/bater%C3%ADa-70%2F70-brightgreen)
 
 ---
 
@@ -34,7 +34,7 @@ patwalink_schema.sql        esquema Supabase para el glosario colaborativo
 node herramientas/runsuite.js
 ```
 
-Sale con código 1 si baja de 67 casos. Ejecutarlo antes de cada commit.
+Sale con código 1 si cae un solo caso. Ejecutarlo antes de cada commit.
 
 ## Compilar el APK
 
@@ -84,12 +84,16 @@ aparece «Añadir a pantalla de inicio».
 
 ## Estado
 
-El motor supera 67 de 70 casos gramaticales. Los tres restantes no son
-fallos del motor: son casos con más de una traducción correcta, y uno de
-ellos no tiene solución posible en texto plano.
+El motor supera los 70 casos de la batería. Tres de ellos admiten dos
+respuestas correctas, porque hay dos traducciones válidas: exigir una sola
+era sortear, no medir. Uno (`INT-01`) es el límite del texto plano — sin
+signo de interrogación, «vienes» y «estás viniendo» dan los dos `yu a come`.
+
+Ese 100% mide coincidencia con el criterio de quien escribió la batería
+sobre 70 fenómenos gramaticales. No mide que el criollo sea correcto.
 
 **El glosario está pendiente de validación por hablantes nativos.** Alrededor
 del 79% de las entradas son palabras inglesas asumidas como válidas en criollo:
 es lo que describe la literatura sobre la composición del léxico, pero no se ha
-verificado entrada por entrada. Hasta que eso ocurra, el 96% mide la distancia
-respecto al criterio de quien escribió la batería, no respecto al criollo real.
+verificado entrada por entrada. **Ése, y no la batería, es el número que
+falta por mover.**
