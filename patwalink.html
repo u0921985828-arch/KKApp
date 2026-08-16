@@ -1312,6 +1312,68 @@ const ESTATIVOS = new Set(['saber','conocer','tener','poseer','querer','amar',
 
 const esEstativo = lemma => ESTATIVOS.has(lemma);
 
+/* ---------- R2b: incoativas ----------
+   El criollo expresa el cambio de estado con verbo ligero + adjetivo:
+   `get cold`, `tun big`. El español no: o lo lexicaliza en un verbo
+   pronominal (enfriarse) o lo perifrasea con «ponerse». Traducido
+   pieza por pieza sale «está consiguiendo fría», que no es español.
+
+   La tabla va indexada por el adjetivo ESPAÑOL, no por el token
+   criollo: así cubre todas las grafías que resuelvan al mismo lema.
+   Lo que no esté en ella cae en la perífrasis, que siempre funciona. */
+const INCOATIVOS = {
+  'frío':'enfriarse',        'caliente':'calentarse',
+  'oscuro':'oscurecerse',    'mojado':'mojarse',
+  'seco':'secarse',          'sucio':'ensuciarse',
+  'limpio':'limpiarse',      'lleno':'llenarse',
+  'vacío':'vaciarse',        'enfermo':'enfermarse',
+  'cansado':'cansarse',      'gordo':'engordar',
+  'flaco':'adelgazar',       'viejo':'envejecer',
+  'grande':'crecer',         'pequeño':'encogerse',
+  'listo':'prepararse',      'dormido':'dormirse',
+  'muerto':'morirse',        'loco':'enloquecer',
+  'contento':'alegrarse',
+  'rico':'enriquecerse',     'pobre':'empobrecerse',
+  'fuerte':'fortalecerse',   'débil':'debilitarse',
+  'triste':'entristecerse',  'perdido':'perderse',
+  'duro':'endurecerse',      'blando':'ablandarse',
+  'bravo':'enfadarse',       'borracho':'emborracharse'
+};
+
+/* verbos ligeros que forman la incoativa */
+const V_INCOAT = ['get','ge','tun','ton','turn'];
+
+/* Devuelve el cambio de estado que empieza en `j`, o null si allí no hay
+   una incoativa. `fem`/`pl` sólo hacen falta para la perífrasis, donde el
+   adjetivo sigue concordando: «se puso nerviosa». `len` es cuántos tokens
+   consume la construcción, que son tres si el adjetivo va reduplicado.   */
+function analizarIncoativa(toks, j, fem, pl){
+  if(!toks[j] || !V_INCOAT.includes(normalize(toks[j]))) return null;
+  const adjTok = toks[j+1];
+  if(!adjTok) return null;
+
+  const h   = lookupPw(adjTok);
+  const adj = h && h.find(x=>x.type === 'adj');
+  if(!adj) return null;
+
+  /* reduplicación sobre un cambio de estado: intensifica el proceso,
+     no el resultado, así que pide «cada vez más», no un superlativo */
+  const red = toks[j+2] && normalize(toks[j+2]) === normalize(adjTok);
+
+  /* `get` seguido de adjetivo + nombre es «conseguir», no incoativa:
+     en «get nice ting» el adjetivo va con el nombre, no con el verbo. */
+  if(!red && toks[j+2] && tipoDe(toks[j+2], adjTok) === 'noun') return null;
+
+  const len = red ? 3 : 2;
+  const lex = INCOATIVOS[adj.d.es];
+  if(lex) return {lemma: lex, len, cola: red ? 'cada vez más' : '',
+                  etiqueta:'INC verbo ligero + adjetivo → incoativo léxico'};
+
+  const a = agree(adj.d.es, fem, pl, adj.d.inv);
+  return {lemma:'ponerse', len, cola: (red ? 'cada vez más ' : '') + a,
+          etiqueta:'INC verbo ligero + adjetivo → perífrasis con ponerse'};
+}
+
 function agree(adjLemma, fem, plural, inv){
   let a = adjLemma;
   if(!inv){
@@ -1555,6 +1617,12 @@ function realizarTMA(tma, lemma, p){
   const est = esEstativo(lemma);
   const neg = '';
 
+  /* Los verbos pronominales colocan el clítico delante de la perífrasis:
+     «se está enfriando». Las formas simples ya lo traen de `conjugate`,
+     y en las que terminan en infinitivo («va a enfriarse») va enclítico
+     dentro del propio lema, así que ahí no se toca nada.               */
+  const cl = lemma.endsWith('se') ? ['me','te','se','nos','os','se'][p] + ' ' : '';
+
   if(tma.modal){
     const m = tma.modal.startsWith('no ')
       ? 'no ' + conjugate(tma.modal.slice(3), p, tma.ant ? 'pret' : 'pres')
@@ -1566,27 +1634,27 @@ function realizarTMA(tma, lemma, p){
     return {t: neg + conjugate('poder', p, 'pres').replace(/o$/,'ría') + ' ' + lemma,
             etiqueta:'COND cuda → condicional de capacidad'};
   if(tma.cond)
-    return {t: neg + condicional(lemma, p), etiqueta:'COND wuda → condicional'};
+    return {t: neg + cl + condicional(lemma, p), etiqueta:'COND wuda → condicional'};
 
   if(tma.fut){
     if(tma.ant) return {t: neg + conjugate('ir', p, 'imp') + ' a ' + lemma, etiqueta:'FUT futuro en el pasado'};
-    if(tma.futSint) return {t: neg + futuroSint(lemma, p), etiqueta:'FUT wi → futuro sintético'};
+    if(tma.futSint) return {t: neg + cl + futuroSint(lemma, p), etiqueta:'FUT wi → futuro sintético'};
     return {t: neg + conjugate('ir', p, 'pres') + ' a ' + lemma, etiqueta:'FUT a go → futuro perifrástico'};
   }
   if(tma.ant && tma.perf)
-    return {t: neg + 'ya ' + conjugate('haber', p, 'imp') + ' ' + participio(lemma),
+    return {t: neg + 'ya ' + cl + conjugate('haber', p, 'imp') + ' ' + participio(lemma),
             etiqueta:'TMA did done → pasado completivo'};
   if(tma.ant && tma.prog)
-    return {t: neg + conjugate('estar', p, 'imp') + ' ' + gerund(lemma),
+    return {t: neg + cl + conjugate('estar', p, 'imp') + ' ' + gerund(lemma),
             etiqueta:'TMA did a → pasado progresivo'};
   if(tma.perf)
-    return {t: neg + 'ya ' + conjugate('haber', p, 'pres') + ' ' + participio(lemma),
+    return {t: neg + 'ya ' + cl + conjugate('haber', p, 'pres') + ' ' + participio(lemma),
             etiqueta:'TMA done → completivo'};
   if(tma.ant)
-    return {t: neg + conjugate('haber', p, 'imp') + ' ' + participio(lemma),
+    return {t: neg + cl + conjugate('haber', p, 'imp') + ' ' + participio(lemma),
             etiqueta:'TMA did → anterior (pluscuamperfecto)'};
   if(tma.prog)
-    return {t: neg + conjugate('estar', p, 'pres') + ' ' + gerund(lemma),
+    return {t: neg + cl + conjugate('estar', p, 'pres') + ' ' + gerund(lemma),
             etiqueta:'TMA a → progresivo'};
 
   if(tma.ant2)
@@ -1971,6 +2039,26 @@ function pwToEsCore(toks){
       const j = i + tma.len;
       const vh = toks[j] ? lookupPw(toks[j]) : null;
       const vb = vh && vh.find(h=>h.type==='verb');
+
+      /* incoativa: se resuelve antes que el verbo suelto, porque el
+         verbo ligero por su cuenta traduce otra cosa («get» → conseguir) */
+      {
+        const nomPrev = [...out].reverse().find(o=>o.noun);
+        const femInc  = nomPrev ? nomPrev.noun.g === 'f' : !!(subject && subject.fem);
+        const plInc   = nomPrev ? !!nomPrev.plural : false;
+        const inc = analizarIncoativa(toks, j, femInc, plInc);
+        if(inc){
+          const p = subject ? subject.p : (nomPrev && nomPrev.plural ? 5 : 2);
+          const r = realizarTMA(tma, inc.lemma, p);
+          if(tma.neg) out.push({t:'no', neg:true});
+          out.push({t: r.t + (inc.cola ? ' ' + inc.cola : ''),
+                    verbForm:true, lemma: inc.lemma});
+          applied.push(inc.etiqueta);
+          applied.push(r.etiqueta);
+          i = j + inc.len;
+          continue;
+        }
+      }
 
       if(vb){
         /* verbo inicial sin sujeto explícito = imperativo */

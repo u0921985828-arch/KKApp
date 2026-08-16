@@ -5,7 +5,7 @@
 **Fecha:** agosto 2026
 
 > **Actualización — v0.7.** Aplicadas las cuatro fases.
-> Resultado: **65/70 (93%)**, desde 6/70 (9%).
+> Resultado: **66/70 (94%)**, desde 6/70 (9%).
 > Detalle por fenómeno al final del documento (§8).
 
 ---
@@ -284,7 +284,7 @@ Orden sensato: Fase 1 y 2 primero (recuperan ~30 casos con trabajo acotado), med
 | NEG negación | 0/6 | **6/6** | resuelto |
 | RED reduplicación | 0/3 | **3/3** | resuelto |
 | TMA sistema tiempo-modo-aspecto | 0/10 | **10/10** | resuelto |
-| COP cópula supletiva | 0/5 | **4/5** | |
+| COP cópula supletiva | 0/5 | **5/5** | resuelto |
 | PRO pronombres | 0/4 | **4/4** | resuelto |
 | SUB subordinación | 0/5 | **5/5** | resuelto |
 | PRD producción ES→PW | 1/10 | **10/10** | resuelto |
@@ -292,7 +292,7 @@ Orden sensato: Fase 1 y 2 primero (recuperan ~30 casos con trabajo acotado), med
 | SN sintagma nominal | 1/7 | **5/7** | |
 | FOC focalización | 0/4 | **4/4** | resuelto |
 | SER verbos seriales | 0/4 | **4/4** | resuelto |
-| **GLOBAL** | **6/70 (9%)** | **65/70 (93%)** | |
+| **GLOBAL** | **6/70 (9%)** | **66/70 (94%)** | |
 
 ### Qué se implementó
 
@@ -324,13 +324,40 @@ En vez de reescribir el núcleo con un analizador sintáctico completo, se imple
 
 Resultado: FOC 0→3, SER 0→2, SN 1→3. Sin reescribir el núcleo.
 
-### Los cinco casos restantes
+### R2b · Incoativas
+
+`get`/`tun` + adjetivo no es el verbo léxico seguido de atributo, sino un
+cambio de estado: `di food a get cold` es «la comida se está enfriando», no
+«está consiguiendo fría». El español lo resuelve de dos maneras y el motor
+usa las dos: verbo pronominal lexicalizado cuando existe (`frío` →
+*enfriarse*, `viejo` → *envejecer*) y perífrasis con `ponerse` cuando no
+(`hungry` → «se está poniendo hambrienta», con concordancia).
+
+Tres decisiones que no son evidentes:
+
+- **La tabla se indexa por el adjetivo español**, no por el token criollo.
+  Así una sola entrada cubre todas las grafías que resuelvan al mismo lema,
+  que es justo el problema que tiene un léxico sin ortografía fijada.
+- **La perífrasis es la salida por defecto**, no un caso de error. Una tabla
+  incompleta degrada a español correcto en vez de a disparate, así que
+  ampliarla mejora la naturalidad pero nunca es un requisito.
+- **No dispara si tras el adjetivo hay un nombre.** En `get nice ting` el
+  adjetivo se agrupa con el nombre y `get` vuelve a ser «conseguir».
+
+El arreglo obligó además a corregir la colocación del clítico en las
+perífrasis: `realizarTMA()` construía «está enfriando» porque el gerundio
+descarta el `se` del lema. Ahora los verbos pronominales lo anteponen
+(«se está enfriando», «ya se ha enfriado»), lo que beneficia a cualquier
+lema pronominal del léxico, no sólo a las incoativas.
+
+Resultado: COP 4/5 → 5/5.
+
+### Los casos restantes
 
 | Caso | Situación |
 |---|---|
 | **INT-01** `yu a come` → «¿vienes?» | **Irreducible.** La cadena es idéntica a la afirmativa; sólo la entonación las distingue, y en texto plano no existe. |
 | **INT-03** `wah mek yu seh dat` | Resuelto salvo el tiempo verbal: sale «¿por qué dijiste eso?» en vez de «dices». Requiere saber que la pregunta es habitual, no puntual. |
-| **COP-05** `di food a get cold` | Construcción incoativa `get` + adjetivo, que en español pide verbo pronominal (*enfriarse*). El motor no maneja verbos de dos tokens. |
 | **SN-04** `a fi mi book` | Colisión entre dos patrones de foco: el posesivo tónico gana sobre el posesivo con nominal. |
 | **SN-07** «una casa grande» → `wan big yaad` | **El orden es correcto.** La discrepancia es sólo léxica: el motor elige `yaad` y la batería esperaba `house`. `yaad` es la forma más auténtica, así que aquí el fallo probablemente está en la respuesta esperada, no en el motor. Se deja como fallo para no ajustar la prueba al resultado. |
 

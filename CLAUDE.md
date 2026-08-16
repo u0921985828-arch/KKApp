@@ -46,6 +46,8 @@ Los marcadores **se apilan**: `did a` es pasado progresivo, `did done` es pasado
 
 **Cópula supletiva.** Tres formas: `a` ante nominal (ser), `deh` ante lugar (estar), cero ante adjetivo.
 
+**Incoativas.** `get`/`tun` + adjetivo es cambio de estado, no el verbo léxico: `get cold` es *enfriarse*, no «conseguir frío». `INCOATIVOS` indexa por el adjetivo **español**, no por el token criollo, para cubrir todas las grafías de golpe; lo que no está en la tabla cae en la perífrasis con `ponerse`, que siempre funciona. La regla se comprueba antes que el verbo suelto, y no dispara si tras el adjetivo hay un nombre (`get nice ting` sigue siendo «conseguir»).
+
 **`conjugate()`** — el español es la parte irregular; el criollo no conjuga. Está resuelto por patrón (diptongación e→ie, o→ue, debilitación e→i) en lugar de por enumeración.
 
 **Índices.** `PW_INDEX` y `ES_INDEX` se construyen en `rebuildIndex()`, que **se llama al final de cada ampliación de léxico**. `ES_EXACT` conserva las tildes: sin él, `compró` colisiona con `compro`.
@@ -61,17 +63,17 @@ La batería diagnóstica está en `patwalink_suite_diagnostica.js`: 70 casos eti
 node herramientas/runsuite.js
 ```
 
-**Marca actual: 65/70 (93%).** Si un cambio la baja, es una regresión: revertir o arreglar antes de seguir.
+**Marca actual: 66/70 (94%).** Si un cambio la baja, es una regresión: revertir o arreglar antes de seguir.
 
 Reparto por fenómeno:
 
 ```
 TMA 10/10   FOC 4/4   SER 4/4   SUB 5/5   NEG 6/6
 PRO  4/4    RED 3/3   ESP 8/8   PRD 10/10
-COP  4/5    SN  5/7   INT 2/4
+COP  5/5    SN  5/7   INT 2/4
 ```
 
-Los cinco fallos restantes están documentados en `estudio_motor_patwalink.md`. Uno (`INT-01`) es **irreducible**: `yu a come` y «estás viniendo» son la misma cadena, sólo la entonación las distingue.
+Los cuatro fallos restantes están documentados en `estudio_motor_patwalink.md`. Uno (`INT-01`) es **irreducible**: `yu a come` y «estás viniendo» son la misma cadena, sólo la entonación las distingue.
 
 ---
 
