@@ -104,11 +104,22 @@ public final class MainActivity extends AppCompatActivity {
         s.setTextZoom(100);                    // respetar el diseño, no el zoom del sistema
         s.setCacheMode(WebSettings.LOAD_NO_CACHE);   // el HTML viaja en el APK
 
-        /* Modo oscuro del sistema, sólo si la versión de WebView instalada
-           lo admite: consultar la característica antes de usarla es
-           obligatorio en androidx.webkit. */
+        /* NO se permite el oscurecimiento algorítmico, y es una decisión de
+           diseño, no un olvido.
+
+           PatwaLink es un cartel serigrafiado: papel crema, tinta casi
+           negra, sombras duras desplazadas y brillo de plástico caramelo.
+           La hoja de estilo no declara `prefers-color-scheme` en ninguna
+           parte porque el diseño se compromete con un solo mundo visual.
+           Dejar que el WebView invierta esos colores por su cuenta no
+           produce un «modo oscuro»: produce el mismo cartel pasado por un
+           filtro que apaga el turquesa, ensucia el crema y deja las sombras
+           duras sin sentido.
+
+           Se desactiva de forma explícita en lugar de confiar en el valor
+           por omisión, para que quede constancia de que se consideró. */
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, true);
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, false);
         }
     }
 

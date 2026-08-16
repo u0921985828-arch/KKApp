@@ -155,6 +155,8 @@ Cartel serigrafiado jamaicano con acabado de principios de los 2000. No es decor
 
 **No usar el tricolor rojo-oro-verde.** Es el recurso obvio y convierte cualquier cosa en souvenir.
 
+**No hay modo oscuro, y es una decisión.** La hoja de estilo no declara `prefers-color-scheme` en ninguna parte: el diseño se compromete con un solo mundo visual, como el cartel que imita. Por eso el contenedor Android desactiva explícitamente el oscurecimiento algorítmico del WebView y usa un tema `Light`, no `DayNight`. Dejar que el sistema invierta estos colores no da un modo oscuro: da el mismo cartel pasado por un filtro que apaga el turquesa, ensucia el crema y deja las sombras duras sin sentido. Si algún día se quiere modo oscuro de verdad, se diseña —repintando la paleta a mano—, no se delega en el inversor del navegador.
+
 ---
 
 ## Compilar
