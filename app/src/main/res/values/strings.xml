@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PatwaLink</string>
+
+    <!-- Se muestra sólo si el dispositivo no tiene un WebView utilizable:
+         desinstalado, deshabilitado o a medio actualizar. -->
+    <string name="sin_webview">PatwaLink necesita el componente WebView del sistema, y este dispositivo no lo tiene disponible.\n\nActualiza «Android System WebView» o «Google Chrome» desde la tienda de aplicaciones y vuelve a abrir PatwaLink.</string>
 </resources>

@@ -1,3 +1,18 @@
+/*
+ * PatwaLink — compilación raíz.
+ *
+ * El proyecto tiene un solo módulo (`:app`), así que aquí sólo se declara
+ * el plugin de Android sin aplicarlo. Las versiones viven en un único
+ * sitio para que actualizar el conjunto sea un cambio de una línea.
+ */
 plugins {
     id 'com.android.application' version '8.5.2' apply false
+}
+
+/** Limpieza completa, incluida la copia generada de la app web. */
+tasks.register('limpiar', Delete) {
+    description = 'Borra artefactos de compilación y la copia de assets'
+    group = 'build'
+    delete rootProject.layout.buildDirectory
+    delete file('app/src/main/assets/index.html')
 }

@@ -2767,13 +2767,66 @@ function esToPw(text){
 }
 
 /* ---------- ensamblado y cobertura ---------- */
+/* Colocación del clítico español.
+
+   La proclisis es la regla general —«lo vi», no «vi lo»—, pero el
+   imperativo AFIRMATIVO exige enclisis: se suelda al verbo y arrastra la
+   tilde, porque «da» + «me» es «dame» y «lleva» + «me» es «llévame». El
+   imperativo negativo vuelve a la proclisis («no me lleves»), así que la
+   negación desactiva la regla.                                          */
+const ACENTUADA = {a:'á', e:'é', i:'í', o:'ó', u:'ú'};
+
+/** Tilde a la sílaba tónica al añadir un clítico: lleva → llévame. */
+function acentuarImperativo(forma, silabasAnadidas){
+  if(silabasAnadidas < 1) return forma;
+
+  const letras = [...forma];
+  const vocales = [];
+  letras.forEach((c, k) => { if(/[aeiouáéíóú]/.test(c)) vocales.push(k); });
+  if(vocales.length < 2) return forma;                 // monosílabo: «dame», sin tilde
+  if(/[áéíóú]/.test(forma)) return forma;              // ya la lleva
+
+  /* La forma sin clíticos es llana; con uno pasa a esdrújula y necesita
+     tilde en la vocal tónica, que es la penúltima del verbo. */
+  const i = vocales[vocales.length - 2];
+  return letras.map((c, k) => k === i ? (ACENTUADA[c] || c) : c).join('');
+}
+
 function moveClitics(out){
-  for(let i=0;i<out.length;i++){
-    if(out[i].objPron){
-      let j=i-1;
-      while(j>=0 && !out[j].verbForm) j--;
-      if(j>=0){ const c=out.splice(i,1)[0]; out.splice(j,0,c); }
+  for(let i = 0; i < out.length; i++){
+    if(!out[i].objPron) continue;
+
+    let j = i - 1;
+    while(j >= 0 && !out[j].verbForm) j--;
+    if(j < 0) continue;
+
+    const verbo = out[j];
+    const clitico = out[i];
+    /* El imperativo negativo trae el «no» soldado dentro del propio token
+       («no digas»), no como marca aparte, así que hay que mirar el texto
+       además de la marca de cláusula. */
+    const negEmbebida = /^no\s+/i.test(String(verbo.t));
+    const negado = negEmbebida || out.some(o => o.neg);
+
+    if(negEmbebida){
+      /* el clítico va entre el negador y el verbo: «no me digas» */
+      out.splice(i, 1);
+      verbo.t = String(verbo.t).replace(/^no\s+/i, 'no ' + clitico.t + ' ');
+      i--;
+      continue;
     }
+
+    if(verbo.imp && !negado){
+      /* enclisis: el clítico se funde con la forma verbal */
+      const unido = acentuarImperativo(String(verbo.t), 1) + String(clitico.t);
+      out.splice(i, 1);
+      verbo.t = unido;
+      i--;
+      continue;
+    }
+
+    const c = out.splice(i, 1)[0];
+    out.splice(j, 0, c);
   }
   return out;
 }
@@ -4464,6 +4517,10 @@ const GRAFEMAS = [
 
 /* Sufijos latinos: el par español↔inglés es prácticamente sistemático.
    Sin tildes, porque la comparación se hace sobre la forma normalizada. */
+/* Sufijos largos primero: `-encia` debe ganar a `-ia`. El orden se fija
+   una vez al cargar y no en cada llamada: `cognadoIngles` se invoca por
+   cada candidato de cada palabra desconocida, y reordenar cuarenta
+   entradas ahí dentro era trabajo repetido en la ruta más caliente. */
 const SUFIJOS = [
   [/cion$/,   'tion'],   [/sion$/,   'sion'],
   [/edad$/,   'ity'],    [/idad$/,   'ity'],
@@ -4485,6 +4542,9 @@ const SUFIJOS = [
   [/oide$/,   'oid'],    [/itud$/,   'itude']
 ];
 
+const SUFIJOS_ORDENADOS = [...SUFIJOS]
+  .sort((a, b) => b[0].source.length - a[0].source.length);
+
 function cognadoIngles(w){
   const n = w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
@@ -4492,8 +4552,6 @@ function cognadoIngles(w){
   let g = n;
   GRAFEMAS.forEach(([re, rep])=>{ g = g.replace(re, rep); });
 
-  /* sufijos largos primero: -encia debe ganar a -ia */
-  const ordenados = [...SUFIJOS].sort((a,b)=> b[0].source.length - a[0].source.length);
 
   const salidas = [];
   const añadir = (forma, prio, regla)=>{
@@ -4506,7 +4564,7 @@ function cognadoIngles(w){
   if(g !== n && !arrastraSufijo && /(y|ph|th|ch|sc|sp|st)/.test(g)) añadir(g, 0, true);
 
   [[g,1],[n,2]].forEach(([base, prio])=>{
-    for(const [re, ing] of ordenados){
+    for(const [re, ing] of SUFIJOS_ORDENADOS){
       if(re.test(base)){
         const cand = base.replace(re, ing);
         if(cand !== base) añadir(cand, prio, true);

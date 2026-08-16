@@ -1,16 +1,32 @@
-/* ============================================================
-   BATERÍA DIAGNÓSTICA PatwaLink
-   Cada caso está etiquetado con el fenómeno lingüístico que
-   pone a prueba. El objetivo no es que pase todo, sino saber
-   exactamente qué falla y por qué.
+'use strict';
+/**
+ * BATERÍA DIAGNÓSTICA DE PatwaLink
+ *
+ * 70 casos etiquetados por el fenómeno lingüístico que ponen a prueba.
+ * El objetivo nunca fue que pasaran todos, sino saber exactamente qué
+ * falla y por qué: la etiqueta vale tanto como el resultado.
+ *
+ * Contrato de un caso:
+ *   f    etiqueta «COD-NN descripción». El código antes del guion agrupa
+ *        por fenómeno en el informe.
+ *   dir  'pw2es' | 'es2pw'
+ *   in   entrada literal, tal como la escribiría una persona
+ *   exp  respuesta esperada: cadena, o lista de respuestas admitidas
+ *
+ * Sobre la lista de respuestas: NO es una concesión para aprobar casos
+ * difíciles. Es para las entradas que tienen más de una traducción
+ * correcta, donde exigir una sola convertía la prueba en un sorteo.
+ * Se usa sólo con la justificación anotada junto al caso, y jamás para
+ * tapar una salida sencillamente incorrecta. Ampliar `exp` para que pase
+ * un caso que falla convierte la batería en decorado.
+ *
+ * Fuentes para la gramática del criollo jamaicano:
+ *   Bailey (1966) Jamaican Creole Syntax
+ *   Cassidy & Le Page (1980) Dictionary of Jamaican English
+ *   Patrick (2004); Durrleman (2008) The Syntax of Jamaican Creole
+ */
 
-   Fuentes de referencia para la gramática del criollo jamaicano:
-   Bailey (1966) Jamaican Creole Syntax; Cassidy & Le Page (1980)
-   Dictionary of Jamaican English; Patrick (2004); Durrleman (2008)
-   The Syntax of Jamaican Creole.
-   ============================================================ */
-
-const SUITE = [
+const CASOS = [
 
 /* ---- A. SISTEMA TMA (tiempo-modo-aspecto) ---- */
 {f:'TMA-01 aspecto por defecto: verbo dinámico desnudo = PASADO',
@@ -129,38 +145,68 @@ const SUITE = [
 {f:'PRD-10 comparativo',       dir:'es2pw', in:'es más grande que el mío', exp:'it bigga dan fi mi'}
 ];
 
-/* ---------- ejecución ----------
+/* ---------- ejecución ---------- */
 
-   `exp` admite una cadena o una lista. La lista NO es una concesión para
-   aprobar casos difíciles: es para las entradas que tienen más de una
-   traducción correcta, donde exigir una sola convertía la prueba en un
-   sorteo. Sólo se usa con justificación anotada en el propio caso, y
-   nunca para tapar una salida que sea sencillamente incorrecta.         */
-function normCmp(s){
-  return normalize(String(s||'')).replace(/[¿¡?!.,]/g,'');
+/** Fenómeno al que pertenece un caso, deducido de su etiqueta. */
+const fenomenoDe = caso => String(caso.f).split('-')[0];
+
+/**
+ * Compara ignorando mayúsculas, tildes y puntuación: lo que se evalúa es
+ * la gramática, no la ortografía de los signos.
+ *
+ * @param {(s: string) => string} normalize  normalizador del propio motor
+ * @returns {(a: string, b: string) => boolean}
+ */
+function comparadorCon(normalize) {
+  const limpiar = v => normalize(String(v ?? '')).replace(/[¿¡?!.,]/g, '');
+  return (obtenido, esperado) =>
+    (Array.isArray(esperado) ? esperado : [esperado])
+      .some(e => limpiar(obtenido) === limpiar(e));
 }
 
-/* pasa si coincide con cualquiera de las respuestas admitidas */
-function coincide(got, exp){
-  return (Array.isArray(exp) ? exp : [exp])
-    .some(e => normCmp(got) === normCmp(e));
-}
+/**
+ * Ejecuta la batería contra un motor ya cargado.
+ *
+ * @param {{traducir: Function, interno: {normalize: Function}}} motor
+ * @param {object} [opciones]
+ * @param {string} [opciones.fenomeno]  ejecutar sólo un fenómeno (p. ej. 'TMA')
+ * @returns {{filas: object[], porFenomeno: Object<string,{ok:number,n:number}>,
+ *            ok: number, total: number}}
+ */
+function ejecutarBateria(motor, opciones = {}) {
+  const coincide = comparadorCon(motor.interno.normalize);
+  const filtro = opciones.fenomeno ? String(opciones.fenomeno).toUpperCase() : null;
 
-function runSuite(){
-  const byCat = {};
-  const rows = [];
-  SUITE.forEach(t=>{
-    dir = t.dir;
-    let r;
-    try { r = ruleTranslate(t.in); }
-    catch(e){ r = {text:'‹ERROR: '+e.message+'›', coverage:0, unknown:[], applied:[]}; }
-    const got = r.text;
-    const pass = coincide(got, t.exp);
-    const cat = t.f.split('-')[0];
-    byCat[cat] = byCat[cat] || {ok:0, n:0};
-    byCat[cat].n++; if(pass) byCat[cat].ok++;
-    rows.push({f:t.f, dir:t.dir, in:t.in, exp:t.exp, got, pass,
-               cov:Math.round(r.coverage*100), unk:r.unknown});
+  const seleccion = filtro ? CASOS.filter(c => fenomenoDe(c) === filtro) : CASOS;
+  if (filtro && !seleccion.length) {
+    const todos = [...new Set(CASOS.map(fenomenoDe))].sort().join(', ');
+    throw new Error(`Fenómeno «${filtro}» desconocido.\n  → Disponibles: ${todos}`);
+  }
+
+  const porFenomeno = {};
+  const filas = seleccion.map(caso => {
+    const r = motor.traducir(caso.in, caso.dir);
+    const pasa = !r.error && coincide(r.text, caso.exp);
+    const fen = fenomenoDe(caso);
+
+    porFenomeno[fen] = porFenomeno[fen] || {ok: 0, n: 0};
+    porFenomeno[fen].n++;
+    if (pasa) porFenomeno[fen].ok++;
+
+    return {
+      f: caso.f, fenomeno: fen, dir: caso.dir, in: caso.in,
+      exp: caso.exp, got: r.text, pass: pasa,
+      cov: Math.round((r.coverage || 0) * 100),
+      unk: r.unknown || [],
+      error: r.error || null
+    };
   });
-  return {rows, byCat};
+
+  return {
+    filas, porFenomeno,
+    ok: filas.filter(f => f.pass).length,
+    total: filas.length
+  };
 }
+
+module.exports = {CASOS, ejecutarBateria, fenomenoDe};

@@ -26,7 +26,7 @@ Un solo fichero HTML, sin dependencias, sin red, sin API, sin coste por uso.
 | `normalize` / `phoneticKey` | Normalización ortográfica y clave fonética. |
 | `DIRECCIÓN DE TRADUCCIÓN` | Estado `dir`, botones, contexto del glosario. |
 | `MOTOR DE REGLAS` | Léxico base, conjugador, autómata TMA, ambas direcciones. |
-| `LÉXICO v0.3 … v0.7` | Ampliaciones sucesivas. Se añaden con `addAll`, que deduplica por lema español. |
+| `LÉXICO v0.3 … v0.8` | Ampliaciones sucesivas. Se añaden con `addAll`, que deduplica por lema español. |
 | `CONJUGADOR v2` | Cambios de raíz, verbos en -zc, -uir, -ducir. Sobrescribe `conjugate`. |
 | `DERIVACIÓN` | Cascada para palabras desconocidas. |
 | `DETECCIÓN DE IDIOMA` | Clasificador español/patois. |
@@ -46,6 +46,8 @@ Los marcadores **se apilan**: `did a` es pasado progresivo, `did done` es pasado
 
 **Cópula supletiva.** Tres formas: `a` ante nominal (ser), `deh` ante lugar (estar), cero ante adjetivo.
 
+**Colocación del clítico.** La proclisis es la regla general (`lo vi`), pero el imperativo **afirmativo** exige enclisis y arrastra la tilde: `da`+`me` es `dame`, `lleva`+`me` es `llévame`. El negativo vuelve a la proclisis, y trae el «no» soldado dentro del propio token verbal en vez de como marca aparte — hay que mirar el texto además de la marca, o sale «no dígasme».
+
 **Enclíticos y existencial.** El español suelda el pronombre al verbo (`llévame`) y el criollo lo deja suelto detrás (`carry mi`); `separarEnclitico` los separa después del léxico y antes de la derivación, que si no inventa un cognado de la forma soldada. El objeto NO se marca con `objPron`: esa marca la usa `moveClitics` para anteponerlo al estilo español. Para `haber` impersonal hay dos salidas: `deh` pospuesto en la pregunta locativa, `it have` en el resto.
 
 **Incoativas.** `get`/`tun` + adjetivo es cambio de estado, no el verbo léxico: `get cold` es *enfriarse*, no «conseguir frío». `INCOATIVOS` indexa por el adjetivo **español**, no por el token criollo, para cubrir todas las grafías de golpe; lo que no está en la tabla cae en la perífrasis con `ponerse`, que siempre funciona. La regla se comprueba antes que el verbo suelto, y no dispara si tras el adjetivo hay un nombre (`get nice ting` sigue siendo «conseguir»).
@@ -58,12 +60,15 @@ Los marcadores **se apilan**: `did a` es pasado progresivo, `did done` es pasado
 
 ## Cómo probar
 
-La batería diagnóstica está en `patwalink_suite_diagnostica.js`: 70 casos etiquetados por fenómeno gramatical.
+La batería diagnóstica está en `herramientas/suite.js`: 70 casos etiquetados por fenómeno gramatical.
 
 ```bash
-# extraer el motor del HTML y ejecutar la batería
-node herramientas/runsuite.js
+node herramientas/runsuite.js                  # batería completa
+node herramientas/runsuite.js --fenomeno=TMA   # sólo un fenómeno
+node herramientas/runsuite.js --motor=otra.html
 ```
+
+Las herramientas comparten `herramientas/motor.js`, que extrae el motor del HTML y lo carga en Node. Ese recorte estaba duplicado en cada herramienta y con él la fragilidad: si cambia la estructura del HTML, ahora sólo hay un sitio que tocar. El bundle temporal se nombra por el hash de su contenido, así que dos versiones del motor conviven en el mismo proceso —eso es lo que hace posible `--motor=`— y editar el HTML nunca sirve una copia cacheada por `require`.
 
 **Marca actual: 70/70.** Cualquier fallo es una regresión: el umbral de `runsuite.js` está en 70, así que la batería sale con código 1 si cae uno solo.
 
@@ -96,8 +101,14 @@ es la cadena de entrada, así que cualquier cambio en la lógica exige vaciar
 `_memoFon` o reiniciar. En la app no importa —se carga entera cada vez— pero al
 probar en Node sí.
 
+`SUFIJOS_ORDENADOS` se calcula una vez al cargar. Antes se reordenaba dentro
+de `cognadoIngles`, que se invoca por cada candidato de cada palabra
+desconocida: trabajo repetido en la ruta más caliente del motor.
+
 `node herramientas/estudio_uso.js` mide todo esto; `--motor=otro.html` compara
-dos versiones contra el mismo corpus y la misma semilla.
+dos versiones contra el mismo corpus y la misma semilla. Marca actual sobre
+82.020 traducciones: cobertura 99,96%, media 0,026 ms, p95 0,079 ms, cero
+excepciones.
 
 ---
 
@@ -149,8 +160,9 @@ Cartel serigrafiado jamaicano con acabado de principios de los 2000. No es decor
 ## Compilar
 
 ```bash
-# APK de depuración
-./gradlew assembleDebug
+./gradlew assembleDebug          # APK de depuración
+./gradlew lintDebug              # análisis estático
+./gradlew limpiar                # borra artefactos y la copia de assets
 ```
 
 El HTML no se copia a mano: la tarea `sincronizarWeb` (en `app/build.gradle`,
@@ -161,6 +173,8 @@ Si el entorno bloquea `dl.google.com` no se puede descargar el SDK de Android:
 en ese caso hay que compilar en el flujo de GitHub Actions, que sí tiene salida
 a internet.
 
-La app Android es un WebView sin permisos, sin puente JavaScript y con `WebViewAssetLoader` en lugar de `file://`.
+La app Android es un WebView sin permisos, sin puente JavaScript y con `WebViewAssetLoader` en lugar de `file://` — este último obligaría a habilitar el acceso a ficheros locales, que es justo lo que conviene evitar. `MainActivity` sobrevive a un dispositivo sin WebView utilizable, desmonta la vista antes de destruirla para no filtrar la Activity, y se hace cargo de la caída del renderizador en vez de dejar que el sistema mate el proceso.
+
+CI comprueba que el HTML empaquetado dentro del APK es idéntico a `patwalink.html`: si la copia a assets fallara, el APK publicado no sería el que se ha probado.
 
 Para la variante PWA, la carpeta `pwa/` ya tiene manifiesto, service worker e iconos. Necesita servirse por HTTPS: con GitHub Pages basta.

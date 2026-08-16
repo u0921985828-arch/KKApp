@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copia de seguridad para Android 11 y anteriores.
+
+    No hay nada que guardar: el diccionario viaja en el APK y el estado de
+    la aplicación vive en memoria por decisión de diseño. Se excluye todo
+    de forma explícita para que una futura escritura en disco no acabe
+    replicada en la nube sin que nadie lo haya decidido.
+-->
+<full-backup-content>
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>

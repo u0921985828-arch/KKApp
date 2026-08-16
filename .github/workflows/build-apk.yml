@@ -1,86 +1,128 @@
 name: Compilar APK
 
+# El HTML es la aplicación entera, así que cualquier cambio en él, en el
+# módulo Android o en el propio flujo obliga a recompilar. Los cambios sólo
+# de documentación no.
 on:
   push:
-    branches:
-      - main
-      - claude/compilar-apk-rzozd8
+    branches: [main, claude/compilar-apk-rzozd8]
+    paths-ignore: ['**.md', 'estudios/**', 'LICENSE']
+  pull_request:
+    paths-ignore: ['**.md', 'estudios/**', 'LICENSE']
   workflow_dispatch:
     inputs:
       release:
-        description: 'Compilar variante de release'
+        description: 'Compilar además la variante de release'
         type: boolean
         default: false
 
+# Un empujón nuevo cancela la compilación anterior de la misma rama: no
+# tiene sentido gastar minutos en un commit ya superado.
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
-  contents: write
+  contents: read
+
+env:
+  JAVA_VERSION: '17'
 
 jobs:
-  apk:
+  # ---------------------------------------------------------------------
+  # Comprobaciones del motor. Van en un trabajo aparte y sin SDK de
+  # Android: tardan segundos y evitan gastar una compilación entera en un
+  # commit que ya rompe la batería.
+  # ---------------------------------------------------------------------
+  motor:
+    name: Motor y batería diagnóstica
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preparar JDK 17
-        uses: actions/setup-java@v4
+      - name: Preparar Node
+        uses: actions/setup-node@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          node-version: '20'
 
-      - name: Preparar SDK de Android
-        uses: android-actions/setup-android@v3
-
-      - name: Preparar Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      # El HTML vive en la raíz del repositorio. La tarea `sincronizarWeb` de
-      # app/build.gradle lo copia a assets en cada compilación, así que aquí
-      # sólo se comprueba que la fuente existe y qué tamaño tiene.
-      - name: Comprobar la app web
+      - name: Comprobar que la app web existe y es sintácticamente válida
         run: |
-          test -f patwalink.html
+          test -f patwalink.html || { echo '::error::falta patwalink.html'; exit 1; }
           echo "Tamaño: $(du -h patwalink.html | cut -f1)"
-
-      - name: Comprobar sintaxis del motor
-        run: |
-          node -e "
-          const fs=require('fs');
-          const s=fs.readFileSync('patwalink.html','utf8');
-          const js=s.split('<script>')[1].split('</script>')[0];
-          fs.writeFileSync('/tmp/motor.js', js);
-          "
-          node --check /tmp/motor.js
-          echo "Sintaxis correcta"
+          node --check <(node -e "
+            const fs = require('fs');
+            const html = fs.readFileSync('patwalink.html', 'utf8');
+            process.stdout.write(html.split('<script>')[1].split('</script>')[0]);
+          ")
 
       - name: Batería diagnóstica
         run: node herramientas/runsuite.js
 
-      - name: Compilar debug
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Estudio de uso (muestra reducida)
+        run: node herramientas/estudio_uso.js --usuarios=500 --json=estudio.json
 
-      - name: Compilar release
-        if: inputs.release
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.KEY_PASS }}
-        run: |
-          if [ -z "$KEYSTORE_B64" ]; then
-            echo "Sin keystore configurado: se omite la variante de release."
-            exit 0
-          fi
-          echo "$KEYSTORE_B64" | base64 -d > app/firma.jks
-          ./gradlew assembleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file=$PWD/app/firma.jks \
-            -Pandroid.injected.signing.store.password="$KEYSTORE_PASS" \
-            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$KEY_PASS"
-          rm -f app/firma.jks
+      - name: Guardar el estudio
+        uses: actions/upload-artifact@v4
+        with:
+          name: estudio-uso
+          path: estudio.json
+          retention-days: 14
+
+  # ---------------------------------------------------------------------
+  # Compilación del APK.
+  # ---------------------------------------------------------------------
+  apk:
+    name: APK de depuración
+    needs: motor
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Preparar SDK de Android
+        uses: android-actions/setup-android@v3
+
+      - name: Validar el wrapper de Gradle
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # El HTML se copia a assets desde la tarea `sincronizarWeb`, que va
+      # enganchada a preBuild: aquí no hay que copiar nada a mano.
+      - name: Compilar debug
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Análisis estático
+        run: ./gradlew lintDebug --no-daemon
 
       - name: Nombrar el APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk PatwaLink.apk
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk PatwaLink.apk
+          echo "SHA256: $(sha256sum PatwaLink.apk | cut -d' ' -f1)"
+
+      # Comprobación de integridad: el APK tiene que llevar dentro el mismo
+      # HTML que hay en la raíz. Si divergen, la copia a assets ha fallado y
+      # el APK publicado no es el que se ha probado.
+      - name: Verificar el contenido del APK
+        run: |
+          unzip -p PatwaLink.apk assets/index.html > empaquetado.html
+          if ! cmp -s empaquetado.html patwalink.html; then
+            echo '::error::el HTML del APK no coincide con patwalink.html'
+            exit 1
+          fi
+          echo 'El APK empaqueta exactamente patwalink.html'
 
       - name: Publicar artefactos
         uses: actions/upload-artifact@v4
@@ -88,19 +130,98 @@ jobs:
           name: patwalink-apk
           path: |
             PatwaLink.apk
-            app/build/outputs/apk/**/*.apk
+            app/build/reports/lint-results-debug.txt
           if-no-files-found: error
+          retention-days: 30
 
-      # Enlace de descarga directa, para instalar desde el móvil sin pasar por
-      # la interfaz de Actions (que exige sesión iniciada).
-      - name: Adjuntar a la release «apk»
-        uses: softprops/action-gh-release@v2
+      - name: Guardar el APK para el paso de publicación
+        uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: apk-para-release
+          path: PatwaLink.apk
+          retention-days: 1
+
+  # ---------------------------------------------------------------------
+  # Variante firmada. Sólo a petición y sólo si hay keystore configurado.
+  # ---------------------------------------------------------------------
+  firmado:
+    name: APK de release firmado
+    needs: apk
+    if: inputs.release
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Preparar SDK de Android
+        uses: android-actions/setup-android@v3
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      - name: Compilar release
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo '::warning::Sin keystore configurado: se omite la variante de release.'
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/firma.jks"
+          KEYSTORE_FILE="$RUNNER_TEMP/firma.jks" \
+            ./gradlew assembleRelease --no-daemon \
+              -PversionCode=${{ github.run_number }}
+          shred -u "$RUNNER_TEMP/firma.jks" 2>/dev/null || rm -f "$RUNNER_TEMP/firma.jks"
+
+      - name: Publicar el release
+        uses: actions/upload-artifact@v4
+        if: hashFiles('app/build/outputs/apk/release/*.apk') != ''
+        with:
+          name: patwalink-apk-release
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 90
+
+  # ---------------------------------------------------------------------
+  # Descarga directa desde el móvil, sin pasar por la interfaz de Actions
+  # (que exige sesión iniciada).
+  # ---------------------------------------------------------------------
+  publicar:
+    name: Adjuntar a la release «apk»
+    needs: apk
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk-para-release
+
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk
           name: PatwaLink APK (depuración)
           body: |
             APK de depuración compilado desde `${{ github.sha }}`.
-            Firmado con la clave de depuración de Android: sirve para instalar
-            a mano, no para publicar en Play Store.
+
+            Firmado con la clave de depuración de Android: sirve para
+            instalar a mano, no para publicar en Play Store.
+
+            Verificado en CI: batería diagnóstica en verde y el HTML
+            empaquetado idéntico a `patwalink.html`.
           files: PatwaLink.apk
           make_latest: false

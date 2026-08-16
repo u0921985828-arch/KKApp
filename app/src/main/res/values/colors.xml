@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paleta tomada de patwalink.html: turquesa de cabecera y papel crema. -->
+<resources>
+    <color name="barra_estado">#00A99A</color>
+    <color name="barra_navegacion">#FFF3DC</color>
+    <color name="fondo_ventana">#FFF3DC</color>
+</resources>
