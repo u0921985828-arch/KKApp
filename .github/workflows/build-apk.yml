@@ -51,11 +51,17 @@ jobs:
         run: |
           test -f patwalink.html || { echo '::error::falta patwalink.html'; exit 1; }
           echo "Tamaño: $(du -h patwalink.html | cut -f1)"
-          node --check <(node -e "
+          # `node --check` necesita un fichero de verdad: no acepta una
+          # tubería, así que el motor se extrae a disco antes de validarlo.
+          node -e "
             const fs = require('fs');
             const html = fs.readFileSync('patwalink.html', 'utf8');
-            process.stdout.write(html.split('<script>')[1].split('</script>')[0]);
-          ")
+            fs.writeFileSync('motor-extraido.js',
+              html.split('<script>')[1].split('</script>')[0]);
+          "
+          node --check motor-extraido.js
+          rm -f motor-extraido.js
+          echo 'Sintaxis del motor correcta'
 
       - name: Batería diagnóstica
         run: node herramientas/runsuite.js
