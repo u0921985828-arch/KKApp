@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Sin lastmod a propósito. Es opcional, y aquí no aportaría: en un
+       sitio de una sola página el rastreador ya vuelve por su cuenta, y
+       cualquier fecha calculada al vuelo haría que el fichero cambiara en
+       cada ejecución del generador. -->
   <url>
     <loc>https://u0921985828-arch.github.io/KKApp/</loc>
-    <lastmod>2026-08-16</lastmod>
     <changefreq>monthly</changefreq>
     <priority>1.0</priority>
   </url>

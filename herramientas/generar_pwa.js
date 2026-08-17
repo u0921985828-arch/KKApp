@@ -485,31 +485,8 @@ function generar(app, url) {
   return salida;
 }
 
-/**
- * Fecha del último cambio de la app, tomada del historial de git.
- *
- * Usar la fecha de hoy haría el sitemap distinto en cada ejecución, y la
- * comprobación de sincronía de CI fallaría sola al día siguiente sin que
- * nadie hubiera tocado nada. Además `lastmod` debe decir cuándo cambió la
- * página, que es cuando cambió `patwalink.html`, no cuándo se regeneró.
- *
- * @returns {string|null} fecha ISO corta, o null si no hay historial
- */
-function fechaDeLaApp() {
-  try {
-    const salida = require('child_process')
-      .execFileSync('git', ['log', '-1', '--format=%cs', '--', 'patwalink.html'],
-                    {cwd: RAIZ, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']})
-      .trim();
-    return /^\d{4}-\d{2}-\d{2}$/.test(salida) ? salida : null;
-  } catch {
-    return null;   // sin git (tarball, copia suelta): se omite lastmod
-  }
-}
-
 /** Ficheros auxiliares del sitio. */
 function auxiliares(url) {
-  const cambiada = fechaDeLaApp();
 
   const robots = `# PatwaLink
 # Todo el sitio es una sola página: no hay nada que ocultar al rastreador.
@@ -533,9 +510,12 @@ Sitemap: ${url}sitemap.xml
 
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Sin lastmod a propósito. Es opcional, y aquí no aportaría: en un
+       sitio de una sola página el rastreador ya vuelve por su cuenta, y
+       cualquier fecha calculada al vuelo haría que el fichero cambiara en
+       cada ejecución del generador. -->
   <url>
-    <loc>${url}</loc>${cambiada ? `
-    <lastmod>${cambiada}</lastmod>` : ''}
+    <loc>${url}</loc>
     <changefreq>monthly</changefreq>
     <priority>1.0</priority>
   </url>
