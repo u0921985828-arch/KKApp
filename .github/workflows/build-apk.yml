@@ -69,6 +69,19 @@ jobs:
       - name: Estudio de uso (muestra reducida)
         run: node herramientas/estudio_uso.js --usuarios=500 --json=estudio.json
 
+      # `pwa/index.html` se genera desde `patwalink.html`. Si alguien edita
+      # la app y no regenera, la web publicada deja de ser la aplicación
+      # probada — el mismo fallo que ya se vigila en el APK.
+      - name: Comprobar que la PWA está sincronizada
+        run: |
+          node herramientas/generar_pwa.js
+          if ! git diff --quiet -- pwa/; then
+            echo '::error::pwa/ está desincronizada. Ejecuta: node herramientas/generar_pwa.js'
+            git diff --stat -- pwa/
+            exit 1
+          fi
+          echo 'pwa/ al día'
+
       - name: Guardar el estudio
         uses: actions/upload-artifact@v4
         with:

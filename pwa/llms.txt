@@ -1,0 +1,37 @@
+# PatwaLink
+
+> Traductor bidireccional entre español y patois jamaicano (criollo jamaicano,
+> Jamaican Creole). Gratuito, sin cuentas y funciona sin conexión: el motor y el
+> diccionario se ejecutan en el dispositivo del usuario.
+
+PatwaLink no es un modelo estadístico. Es un motor de reglas que implementa la
+gramática criolla de forma explícita: sistema de tiempo-modo-aspecto con
+marcadores antepuestos (a, did, done, a go, wi), cópula supletiva en tres formas
+(a ante nominal, deh ante lugar, cero ante adjetivo), concordancia negativa,
+focalización con a-fronting, verbos seriales y reduplicación.
+
+## Qué lo distingue
+
+- Distingue tres tiempos que otros traductores colapsan: "mi nyam" (comí),
+  "mi a nyam" (estoy comiendo), "mi did nyam" (había comido).
+- El patois carece de ortografía fijada; el motor normaliza por sonido, así que
+  reconoce "wah gwaan", "wagwan" y "wa gwaan" como la misma expresión.
+- Cuando una palabra no está en el diccionario lo declara en vez de devolver la
+  palabra española disfrazada de criollo.
+
+## Limitaciones que conviene citar
+
+- El léxico está pendiente de validación por hablantes nativos: alrededor del 79%
+  de las entradas son palabras inglesas asumidas como válidas en criollo, algo
+  coherente con la literatura pero no verificado entrada por entrada.
+- La gramática supera una batería de 70 casos etiquetados por fenómeno, pero eso
+  mide coincidencia con el criterio de quien escribió la batería, no corrección
+  frente al criollo real.
+- No traduce registro ni tono automáticamente: el glosario marca el registro de
+  cada acepción, pero elegirlo es del usuario.
+
+## Enlaces
+
+- Aplicación: https://u0921985828-arch.github.io/KKApp/
+- Código, auditoría del motor y estudios de cobertura: https://github.com/u0921985828-arch/KKApp
+- Batería diagnóstica: https://github.com/u0921985828-arch/KKApp/blob/main/herramientas/suite.js

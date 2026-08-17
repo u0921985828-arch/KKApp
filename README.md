@@ -27,6 +27,7 @@ herramientas/
   suite.js                        70 casos por fenómeno gramatical
   estudio_uso.js                  simulador de carga y cobertura
   corpus_uso.js                   frases del simulador, ajenas al léxico
+  generar_pwa.js                  construye la web desde patwalink.html
   destilar.py                     genera corpus y destila léxico con un LLM
 
 estudios/
@@ -35,13 +36,13 @@ estudios/
   estudio_uso_simulado.md         carga y cobertura con 10.000 usuarios
 
 app/                              proyecto Android (WebView sin permisos)
-pwa/                              variante instalable desde el navegador
+pwa/                              variante web e instalable (generada)
 patwalink_schema.sql              esquema Supabase del glosario colaborativo
 ```
 
-`pwa/index.html` **se genera** a partir de `patwalink.html`: es el mismo
-fichero más la cabecera instalable y el registro del service worker. No se
-edita a mano.
+`pwa/index.html`, `robots.txt`, `sitemap.xml` y `llms.txt` **se generan** con
+`node herramientas/generar_pwa.js`. No se editan a mano: CI comprueba que
+estén al día, igual que comprueba el HTML empaquetado en el APK.
 
 ---
 
@@ -135,11 +136,26 @@ En local, la firma se pasa por propiedad de Gradle:
 ## Publicar la PWA
 
 ```bash
+node herramientas/generar_pwa.js          # o --url=https://midominio.com/
 git subtree push --prefix pwa origin gh-pages
 ```
 
 El service worker necesita HTTPS. Con Pages ya lo tienes, y desde el móvil
 aparece «Añadir a pantalla de inicio».
+
+El generador añade a la web una capa que la app offline no lleva: metadatos,
+datos estructurados (`WebApplication` y `FAQPage`) y el texto que responde a
+la intención de búsqueda —qué es el patois, si funciona sin conexión, cómo se
+escribe—, más una tabla de frases y las preguntas frecuentes. Esa capa **se
+oculta cuando la PWA corre instalada** (`display-mode: standalone`): la ve
+quien llega desde un buscador, no quien ya tiene la aplicación abierta.
+
+El H1 sigue siendo el logotipo, con el resto de la frase en texto accesible
+pero no visible, para que diga de qué va la página sin repetir el título de
+pestaña y sin tocar el diseño.
+
+No se declara `LocalBusiness`: no hay negocio con dirección física y marcar
+uno inexistente es información falsa en el marcado.
 
 ---
 
