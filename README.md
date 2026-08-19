@@ -11,7 +11,8 @@ cerca/
 ├── sql/
 │   ├── 01_esquema.sql      ← tablas, PostGIS, RLS, RPC
 │   ├── 02_seguridad.sql    ← sesión anónima, reportes, borrado suave
-│   └── 03_auditoria.sql    ← correcciones de la auditoría
+│   ├── 03_auditoria.sql    ← correcciones de la auditoría
+│   └── 04_avisos.sql       ← permisos de PUBLIC, auth.uid() por fila
 ├── docs/
 │   ├── PRD.md              ← producto, UVP, moderación, monetización
 │   ├── PUESTA_EN_MARCHA.md ← Supabase + hosting + APK, paso a paso
@@ -24,7 +25,8 @@ cerca/
 ## Arrancar en 20 minutos
 
 1. **Supabase.** Proyecto nuevo en Fráncfort (`eu-central-1`, por el RGPD).
-   En SQL Editor, pegar y ejecutar `sql/01`, `sql/02` y `sql/03`, **en ese orden**.
+   En SQL Editor, pegar y ejecutar `sql/01`, `sql/02`, `sql/03` y `sql/04`,
+   **en ese orden**.
 2. **Panel de Supabase**, dos interruptores que el SQL no puede tocar:
    - Authentication → Sign In / Providers → **Anonymous sign-ins: ON**
    - Authentication → Bot & Abuse Protection → **Turnstile: ON**.

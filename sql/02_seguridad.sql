@@ -357,6 +357,9 @@ grant execute on function public.add_toilet(text, double precision, double preci
 grant execute on function public.report_item(text, text, text, text) to authenticated;
 grant execute on function public.retract(text, text) to authenticated;
 
+-- OJO: este revoke por sí solo no sirve de nada. PostgreSQL concede EXECUTE
+-- a PUBLIC al crear la función, y PUBLIC alcanza también a anon, así que el
+-- permiso sigue llegando por la puerta de al lado. Lo cierra la migración 04.
 revoke execute on function public.add_toilet(text, double precision, double precision, boolean, boolean, boolean, boolean, text, text, text, text) from anon;
 
 -- ───────────────── 8. COLA DE MODERACIÓN (sólo tú) ────────────────────

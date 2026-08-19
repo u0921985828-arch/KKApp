@@ -552,3 +552,64 @@ y endurece el manifest él mismo. Pendiente de probar con el keystore real.
 - `PUESTA_EN_MARCHA.md` nombraba archivos SQL que no existen en el repo.
 - `openDetail` trataba longitud 0 como "sin valor" (`ref.lng || ref.lon`);
   el meridiano de Greenwich cruza España.
+
+---
+
+# Auditoría 3 · 2026-08-14 · Avisos del linter de Supabase
+
+Revisión de los 24 avisos del linter contra la base real. Cuatro accionables,
+aplicados en `sql/04_avisos.sql`; el resto se documenta y se deja.
+
+## El `revoke from anon` de la 02 no revocaba nada (ALTO, aplicado)
+
+PostgreSQL concede `EXECUTE` a `PUBLIC` al crear una función, y `PUBLIC`
+alcanza a todos los roles. Quitárselo a `anon` dejando el de `PUBLIC` intacto
+no quita nada: el permiso seguía llegando por la puerta de al lado. `anon`
+podía llamar por REST a `add_toilet`, `add_review`, `report_item`, `retract`,
+a los tres `guard_*` y a `apply_reports`.
+
+No era explotable —las funciones empiezan comprobando `auth.uid()`, los
+disparadores no se pueden invocar directamente y el RLS bloquea el insert de
+`anon`— pero el revoke era decorativo. Ahora se revoca de `PUBLIC` y se
+concede explícitamente: lectura a `anon` y `authenticated`, publicación sólo
+a `authenticated`, y los guardias sin permiso para nadie.
+
+## auth.uid() reevaluado por fila (MEDIO, aplicado)
+
+Cuatro políticas llamaban a `auth.uid()` suelto en el `USING`/`WITH CHECK`,
+lo que obliga a Postgres a evaluarlo una vez por fila. Envuelto en un
+subselect escalar se evalúa una vez por consulta. Con dos filas da igual;
+con doscientas mil, no.
+
+## reports.created_by sin índice (BAJO, aplicado)
+
+`toilets` y `reviews` tenían su índice de propietario desde la 02; `reports`
+se quedó sin él. Sin índice, borrar un usuario de `auth.users` obliga a
+recorrer la tabla entera para resolver la clave ajena.
+
+## Una función de otro proyecto en la base (a decidir)
+
+`public.es_miembro_de_match(uuid)` no es de CERCA: consulta una tabla
+`public.matches` que no existe en esta base. Es `SECURITY DEFINER` y
+ejecutable por `authenticated`. Llamarla falla —la tabla no está— así que no
+es aprovechable, pero es código privilegiado muerto. No se toca sin decidirlo:
+si es un resto de otro experimento, `drop function public.es_miembro_de_match(uuid);`.
+
+## Lo que el linter marca y no se toca, a propósito
+
+- **`authenticated` puede ejecutar `add_review`, `report_item` y `retract`.**
+  Es el diseño. Son `SECURITY DEFINER` porque el servidor tiene que medir la
+  distancia y escribir saltándose el insert directo; las tres empiezan
+  comprobando `auth.uid()`. El aviso pide confirmar que es deliberado.
+- **`spatial_ref_sys` sin RLS** (marcado ERROR). Es la tabla de sistemas de
+  coordenadas de PostGIS, idéntica en todas las bases del mundo, y no somos
+  sus dueños. La 04 lo intenta y se rinde limpiamente.
+- **`st_estimatedextent`** (×3) es de PostGIS, propiedad de `supabase_admin`.
+- **PostGIS instalada en `public`.** Moverla con las tablas ya usando
+  `geography(point,4326)` obliga a reescribir el `search_path` de todas las
+  funciones y a arriesgar los tipos de las columnas. Beneficio de higiene,
+  riesgo de romper la app.
+- **«Unused index» sobre los seis índices.** La base está vacía y nadie ha
+  lanzado todavía una consulta. Son exactamente los que la app necesita:
+  `toilets_geom_idx` es el que evita que `toilets_nearby` recorra la tabla
+  entera. Volver a mirarlo cuando haya tráfico real.

@@ -212,6 +212,7 @@ El orden de ejecución del SQL, sin saltarse ninguno:
 1. `sql/01_esquema.sql` — esquema base
 2. `sql/02_seguridad.sql` — identidad, reportes, borrado suave
 3. `sql/03_auditoria.sql` — correcciones de auditoría
+4. `sql/04_avisos.sql` — permisos de PUBLIC y avisos del linter
 
 Los tres son idempotentes: se pueden repetir sin romper nada.
 
